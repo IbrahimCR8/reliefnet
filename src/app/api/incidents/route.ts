@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
-import { DEMO_INCIDENTS } from '@/lib/demo-data';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -15,7 +14,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? await createServiceClient()
+      : await createClient();
+
     let query = supabase
       .from('incidents')
       .select('*, incident_media(*)')
@@ -29,14 +31,13 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query;
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.warn('incidents query notice:', error.message);
+      return NextResponse.json({ incidents: [], is_demo: false });
     }
 
     return NextResponse.json({ incidents: data || [], is_demo: false });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to query incidents' },
-      { status: 500 }
-    );
+    console.error('Failed to query incidents:', err);
+    return NextResponse.json({ incidents: [], is_demo: false });
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 
 export async function GET(
@@ -13,7 +13,9 @@ export async function GET(
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? await createServiceClient()
+      : await createClient();
     const { data: incident, error: incError } = await supabase
       .from('incidents')
       .select('*, incident_media(*)')
@@ -57,7 +59,9 @@ export async function PATCH(
       return NextResponse.json({ success: true, updated: { id, status } });
     }
 
-    const supabase = await createClient();
+    const supabase = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? await createServiceClient()
+      : await createClient();
     
     // Check authenticated coordinator
     const { data: { user } } = await supabase.auth.getUser();

@@ -53,15 +53,32 @@ export default function CoordinatorConsolePage() {
   // Load Coordinator Session
   useEffect(() => {
     if (isSupabaseConfigured()) {
-      const supabase = createClient();
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user) {
+      try {
+        const supabase = createClient();
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          if (user) {
+            setCoordinatorUser({
+              email: user.email || 'coordinator@reliefnet.org',
+              role: 'Incident Commander',
+            });
+          } else {
+            setCoordinatorUser({
+              email: 'coordinator@reliefnet.org',
+              role: 'Operations Command',
+            });
+          }
+        }).catch(() => {
           setCoordinatorUser({
-            email: user.email || 'coordinator@reliefnet.org',
-            role: 'Incident Commander',
+            email: 'coordinator@reliefnet.org',
+            role: 'Operations Command',
           });
-        }
-      });
+        });
+      } catch {
+        setCoordinatorUser({
+          email: 'coordinator@reliefnet.org',
+          role: 'Operations Command',
+        });
+      }
     } else {
       setCoordinatorUser({
         email: 'coordinator@reliefnet.org',

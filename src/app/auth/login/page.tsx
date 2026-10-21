@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Shield, AlertTriangle } from 'lucide-react';
@@ -17,6 +17,22 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   const supabaseReady = isSupabaseConfigured();
+
+  // If already logged in, redirect directly to coordinator console
+  useEffect(() => {
+    if (supabaseReady) {
+      try {
+        const supabase = createClient();
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.user) {
+            router.push('/coordinator');
+          }
+        });
+      } catch {
+        // Proceed to form
+      }
+    }
+  }, [supabaseReady, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +59,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push('/dashboard');
+      router.push('/coordinator');
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
       console.error(err);

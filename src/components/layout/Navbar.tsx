@@ -12,6 +12,7 @@ const navLinks = [
   { href: '/incidents', label: 'Incidents' },
   { href: '/report', label: 'Report' },
   { href: '/volunteers', label: 'Volunteers' },
+  { href: '/coordinator', label: 'Coordinator Console' },
   { href: '/dashboard', label: 'Dashboard' },
 ];
 
@@ -66,11 +67,11 @@ export function Navbar() {
               Volunteer Login
             </Link>
             <Link
-              href="/auth/login"
+              href="/coordinator"
               className="flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-300 hover:text-white hover:bg-blue-500/20 transition-colors"
             >
               <Shield className="h-3.5 w-3.5 text-blue-400" />
-              Coordinator Login
+              Coordinator Console
             </Link>
           </div>
 
@@ -122,12 +123,12 @@ export function Navbar() {
               Volunteer Login
             </Link>
             <Link
-              href="/auth/login"
+              href="/coordinator"
               onClick={() => setMobileOpen(false)}
               className="flex items-center justify-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-300"
             >
               <Shield className="h-4 w-4 text-blue-400" />
-              Coordinator Login
+              Coordinator Console
             </Link>
           </div>
         </div>
