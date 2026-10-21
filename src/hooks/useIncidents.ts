@@ -54,8 +54,41 @@ export function useIncidents(options: UseIncidentsOptions = {}): UseIncidentsRes
   }, [options.status, options.category, options.severity]);
 
   useEffect(() => {
-    fetchIncidents();
-  }, [fetchIncidents]);
+    let ignore = false;
+    const run = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        if (isDemoMode() || !isSupabaseConfigured()) {
+          let filtered = DEMO_INCIDENTS;
+          if (options.status) filtered = filtered.filter(i => i.status === options.status);
+          if (options.category) filtered = filtered.filter(i => i.category === options.category);
+          if (options.severity) filtered = filtered.filter(i => i.severity === options.severity);
+          if (!ignore) setIncidents(filtered);
+        } else {
+          const params = new URLSearchParams();
+          if (options.status) params.set('status', options.status);
+          if (options.category) params.set('category', options.category);
+          if (options.severity) params.set('severity', options.severity);
+
+          const res = await fetch(`/api/incidents?${params.toString()}`);
+          if (!res.ok) throw new Error('Failed to fetch incidents');
+          const data = await res.json();
+          if (!ignore) setIncidents(data.incidents || []);
+        }
+      } catch (err) {
+        if (!ignore) setError(String(err));
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    };
+
+    void run();
+
+    return () => {
+      ignore = true;
+    };
+  }, [options.status, options.category, options.severity]);
 
   return {
     incidents,

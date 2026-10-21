@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -10,7 +10,6 @@ import {
   CATEGORY_LABELS,
   CATEGORY_ICONS,
   MAP_MARKER_COLORS,
-  formatDate,
 } from '@/lib/utils';
 import { SeverityBadge, StatusBadge } from '@/components/ui/Badge';
 import { ExternalLink, MapPin } from 'lucide-react';
@@ -22,27 +21,32 @@ interface MapComponentProps {
   selectedStatus?: string;
 }
 
+const emptySubscribe = () => () => {};
+
+// Fix default leaflet marker icon asset paths once at module scope
+if (typeof window !== 'undefined') {
+  // @ts-expect-error Leaflet default icon delete
+  delete L.Icon.Default.prototype._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  });
+}
+
 export default function MapComponent({
   incidents,
   selectedCategory,
   selectedSeverity,
   selectedStatus,
 }: MapComponentProps) {
-  const [mounted, setMounted] = useState(false);
+  const isClient = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
 
-  useEffect(() => {
-    setMounted(true);
-    // Fix default leaflet marker icon asset paths
-    // @ts-expect-error Leaflet default icon delete
-    delete L.Icon.Default.prototype._getIconUrl;
-    L.Icon.Default.mergeOptions({
-      iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-      iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-      shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-    });
-  }, []);
-
-  if (!mounted) {
+  if (!isClient) {
     return (
       <div className="w-full h-full min-h-[550px] bg-slate-900 flex items-center justify-center text-slate-400">
         Loading interactive map...

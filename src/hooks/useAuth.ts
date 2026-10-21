@@ -12,18 +12,17 @@ interface UseAuthResult {
 }
 
 export function useAuth(): UseAuthResult {
+  const isConfigured = isSupabaseConfigured();
   const [user, setUser] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isConfigured);
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      setLoading(false);
-      return;
-    }
+    if (!isConfigured) return;
 
+    let subscription: { unsubscribe: () => void } | null = null;
     try {
       const supabase = createClient();
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      const res = supabase.auth.onAuthStateChange(
         async (event, session) => {
           if (session?.user) {
             const { data: profile } = await supabase
@@ -38,14 +37,15 @@ export function useAuth(): UseAuthResult {
           setLoading(false);
         }
       );
-
-      return () => {
-        subscription.unsubscribe();
-      };
+      subscription = res.data.subscription;
     } catch {
-      setLoading(false);
+      // Supabase client initialization failure handled without cascading render
     }
-  }, []);
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, [isConfigured]);
 
   const signOut = async () => {
     if (!isSupabaseConfigured()) return;
