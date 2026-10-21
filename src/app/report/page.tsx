@@ -9,7 +9,6 @@ import { reportIncidentSchema, type ReportIncidentFormData } from '@/lib/validat
 import { Input, Textarea, Select } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
-import { isDemoMode } from '@/lib/demo-data';
 import { generateReferenceCode } from '@/lib/utils';
 import { PhotoUpload } from '@/components/incidents/PhotoUpload';
 
@@ -33,7 +32,6 @@ const SEVERITY_OPTIONS = [
 
 export default function ReportPage() {
   const router = useRouter();
-  const demo = isDemoMode();
   const supabaseReady = isSupabaseConfigured();
 
   const [uploadedMedia, setUploadedMedia] = useState<{ public_id: string; secure_url: string } | null>(null);
@@ -77,24 +75,17 @@ export default function ReportPage() {
         data.cloudinary_url = uploadedMedia.secure_url;
       }
 
-      if (demo || !supabaseReady) {
-        // Safe demonstrative execution when live credentials are unconfigured
-        await new Promise((r) => setTimeout(r, 600));
-        const code = generateReferenceCode();
-        setSuccessCode(code);
-      } else {
-        // Authenticated or anonymous incident persistence to database
-        const res = await fetch('/api/incidents/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        const json = await res.json();
-        if (!res.ok) {
-          throw new Error(json.error ?? 'Incident submission failed.');
-        }
-        setSuccessCode(json.incident?.reference_code ?? generateReferenceCode());
+      // Persist live incident to database
+      const res = await fetch('/api/incidents/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error ?? 'Incident submission failed.');
       }
+      setSuccessCode(json.incident?.reference_code ?? generateReferenceCode());
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'An unexpected error occurred during submission.');
     } finally {
@@ -129,12 +120,6 @@ export default function ReportPage() {
             </p>
             <p className="text-2xl font-mono font-bold text-orange-400">{successCode}</p>
           </div>
-
-          {demo && (
-            <p className="text-xs text-yellow-300/80 mb-6 bg-yellow-950/30 border border-yellow-900/60 p-3 rounded-lg">
-              Notice: Platform is currently operating in Demonstration Mode. This report has passed full client &amp; server schema validation.
-            </p>
-          )}
 
           <div className="flex flex-col sm:flex-row gap-3">
             <Button variant="primary" onClick={handleReportAnother} className="flex-1">

@@ -175,5 +175,5 @@ export const DEMO_STATUS_HISTORY: IncidentStatusHistory[] = [
 ];
 
 export function isDemoMode(): boolean {
-  return !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  return false;
 }

@@ -74,7 +74,7 @@ export function PhotoUpload({ onUploadComplete, onUploadError, onClear }: PhotoU
           // Cloudinary not configured in environment
           throw new Error(
             errorData.error ||
-              'Cloudinary API keys are not set in environment. Demo uploads simulate reference attachment.'
+              'Cloudinary API keys are not set in environment (.env.local).'
           );
         }
         throw new Error(errorData.error || 'Failed to authenticate upload request.');

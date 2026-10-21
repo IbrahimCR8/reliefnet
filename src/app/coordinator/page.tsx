@@ -176,11 +176,7 @@ export default function CoordinatorConsolePage() {
           role: 'Incident Commander / Zonal Coordinator',
         });
       } else {
-        // Local Demo Mode Login
-        setCoordinatorUser({
-          email: loginEmail.trim(),
-          role: 'Incident Commander / Zonal Coordinator',
-        });
+        setLoginError('Supabase authentication is not configured in .env.local.');
       }
     } catch (err) {
       setLoginError('Authentication failed. Check your Supabase configuration or network connection.');
@@ -190,15 +186,7 @@ export default function CoordinatorConsolePage() {
     }
   };
 
-  // 4. Handle Demo Mode One-Click Bypass
-  const handleDemoBypass = () => {
-    setCoordinatorUser({
-      email: 'admin@reliefnet.com',
-      role: 'Incident Commander (Demo Mode)',
-    });
-  };
-
-  // 5. Handle Sign Out
+  // 4. Handle Sign Out
   const handleSignOut = async () => {
     if (supabaseReady) {
       try {
@@ -353,16 +341,6 @@ export default function CoordinatorConsolePage() {
                 )}
               </Button>
             </form>
-
-            <div className="pt-3 border-t border-slate-800 text-center">
-              <button
-                type="button"
-                onClick={handleDemoBypass}
-                className="text-xs text-slate-400 hover:text-blue-400 transition-colors inline-flex items-center gap-1"
-              >
-                <span>Offline / Evaluation Mode &rarr;</span>
-              </button>
-            </div>
           </div>
 
           {/* Quick Setup Instructions for Supabase */}

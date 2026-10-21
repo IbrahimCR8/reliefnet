@@ -15,11 +15,10 @@ import {
   Activity
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Badge, DemoBadge } from '@/components/ui/Badge';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ReliefNetLogo } from '@/components/ui/Logo';
-import { isDemoMode } from '@/lib/demo-data';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface VolunteerSession {
@@ -35,7 +34,6 @@ interface VolunteerSession {
 }
 
 export default function VolunteerLoginPage() {
-  const isDemo = isDemoMode();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -79,14 +77,7 @@ export default function VolunteerLoginPage() {
           status: 'available',
         });
       } else {
-        // Demo simulation
-        setTimeout(() => {
-          setSession({
-            name: email.split('@')[0].toUpperCase(),
-            email,
-            status: 'available',
-          });
-        }, 500);
+        setError('Supabase authentication is not configured in .env.local.');
       }
     } catch {
       setError('An unexpected error occurred. Please try again.');

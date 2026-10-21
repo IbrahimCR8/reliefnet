@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useIncidents } from '@/hooks/useIncidents';
-import { DemoBadge } from '@/components/ui/Badge';
 import { CATEGORY_LABELS } from '@/lib/utils';
 import { Filter, Layers, List, Map as MapIcon } from 'lucide-react';
 import { IncidentCard } from '@/components/incidents/IncidentCard';
@@ -41,7 +40,6 @@ export default function ResponseMapPage() {
             <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
               Disaster Response Map
             </h1>
-            {isDemo && <DemoBadge />}
           </div>
           <p className="text-sm text-slate-400 mt-1">
             Real-time geospatial intelligence of verified and incoming crisis incidents.

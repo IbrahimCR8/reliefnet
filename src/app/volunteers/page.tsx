@@ -24,10 +24,9 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Badge, DemoBadge } from '@/components/ui/Badge';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { isDemoMode } from '@/lib/demo-data';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface VolunteerItem {
@@ -247,14 +246,7 @@ export default function VolunteersPage() {
           status: 'Active Registered Responder',
         });
       } else {
-        // Demo mode login simulation
-        setTimeout(() => {
-          setVolunteerSession({
-            name: loginEmail.split('@')[0].toUpperCase(),
-            email: loginEmail,
-            status: 'Active Registered Responder',
-          });
-        }, 500);
+        setLoginError('Supabase authentication is not configured in .env.local.');
       }
     } catch {
       setLoginError('Failed to sign in. Please verify your email and password.');

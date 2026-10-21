@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { volunteerProfileSchema } from '@/lib/validations';
 
@@ -18,27 +18,15 @@ export async function POST(request: NextRequest) {
     const aadharLast4 = parsed.data.aadhar.slice(-4);
 
     if (!isSupabaseConfigured()) {
-      // In demo mode, acknowledge submission without crashing
-      return NextResponse.json({
-        success: true,
-        message: 'register successful will reach you soon',
-        volunteer: {
-          id: `vol-${Date.now()}`,
-          name: parsed.data.name,
-          email: parsed.data.email,
-          phone: parsed.data.phone,
-          aadhar_last4: aadharLast4,
-          address: parsed.data.address,
-          skills: parsed.data.skills,
-          availability: parsed.data.availability,
-          organization: parsed.data.organization || 'Independent Responder',
-          verification_status: 'pending_review',
-        },
-        is_demo: true,
-      });
+      return NextResponse.json(
+        { error: 'Database is not configured. Add Supabase keys to .env.local.' },
+        { status: 503 }
+      );
     }
 
-    const supabase = await createClient();
+    const supabase = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? await createServiceClient()
+      : await createClient();
 
     // If password provided, register Supabase auth user so they can login with email & password
     let userId: string | null = null;

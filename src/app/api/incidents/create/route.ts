@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { reportIncidentSchema } from '@/lib/validations';
 import { generateReferenceCode } from '@/lib/utils';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
@@ -24,25 +24,15 @@ export async function POST(request: NextRequest) {
     const reference_code = generateReferenceCode();
 
     if (!isSupabaseConfigured()) {
-      // In demonstration mode, respond with success and reference code
       return NextResponse.json(
-        {
-          incident: {
-            id: `demo-${Date.now()}`,
-            reference_code,
-            ...data,
-            status: 'unverified',
-            created_at: new Date().toISOString(),
-            is_demo: true,
-          },
-          success: true,
-          is_demo: true,
-        },
-        { status: 201 }
+        { error: 'Database is not configured. Add Supabase keys to .env.local.' },
+        { status: 503 }
       );
     }
 
-    const supabase = await createClient();
+    const supabase = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? await createServiceClient()
+      : await createClient();
 
     // Get current user (anonymous reporting is allowed)
     const {

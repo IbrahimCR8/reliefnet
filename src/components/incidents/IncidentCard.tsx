@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { MapPin, Users, Clock, ArrowRight } from 'lucide-react';
 import type { Incident } from '@/types';
-import { SeverityBadge, StatusBadge, DemoBadge } from '@/components/ui/Badge';
+import { SeverityBadge, StatusBadge } from '@/components/ui/Badge';
 import { CATEGORY_ICONS, CATEGORY_LABELS, timeAgo } from '@/lib/utils';
 
 interface IncidentCardProps {
@@ -22,7 +22,6 @@ export function IncidentCard({ incident }: IncidentCardProps) {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            {incident.is_demo && <DemoBadge />}
             <span className="text-xs text-slate-500 flex items-center gap-1">
               <Clock className="h-3 w-3" />
               {timeAgo(incident.created_at)}

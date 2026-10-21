@@ -53,9 +53,5 @@ export function StatusBadge({ status }: { status: IncidentStatus }) {
 }
 
 export function DemoBadge() {
-  return (
-    <Badge className="bg-yellow-900/40 text-yellow-300 border-yellow-700 animate-pulse">
-      ⚡ DEMO DATA
-    </Badge>
-  );
+  return null;
 }
