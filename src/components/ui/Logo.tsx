@@ -1,12 +1,20 @@
-export function ReliefNetLogo({ className = 'h-8 w-8' }: { className?: string }) {
+interface LogoProps {
+  className?: string;
+  size?: number;
+}
+
+export function ReliefNetLogo({ className = 'h-8 w-8', size }: LogoProps) {
   return (
     <svg
       className={className}
+      width={size || 36}
+      height={size || 36}
       viewBox="0 0 40 40"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-label="ReliefNet Logo"
       role="img"
+      style={{ display: 'inline-block' }}
     >
       {/* Shield background */}
       <path
