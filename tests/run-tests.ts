@@ -112,6 +112,10 @@ test('Auth Validation: Signup password mismatch is caught', () => {
 // ── Test 3: Volunteer Profile Validation ─────────────────────────
 test('Volunteer Validation: Valid registration passes', () => {
   const parsed = volunteerProfileSchema.safeParse({
+    name: 'Dr. Priya Sharma',
+    email: 'priya@emergency.org',
+    phone: '9876543210',
+    aadhar: '5555 4444 3333',
     skills: ['First Aid & Triage', 'Water Rescue'],
     availability: 'Weekends and on-call emergencies',
     organization: 'Civil Protection Corps',
@@ -121,7 +125,35 @@ test('Volunteer Validation: Valid registration passes', () => {
 
 test('Volunteer Validation: Empty skills array is rejected', () => {
   const parsed = volunteerProfileSchema.safeParse({
+    name: 'Dr. Priya Sharma',
+    email: 'priya@emergency.org',
+    phone: '9876543210',
+    aadhar: '555544443333',
     skills: [],
+    availability: 'Weekends',
+  });
+  assert.equal(parsed.success, false);
+});
+
+test('Volunteer Validation: Invalid Aadhaar number is rejected', () => {
+  const parsed = volunteerProfileSchema.safeParse({
+    name: 'Dr. Priya Sharma',
+    email: 'priya@emergency.org',
+    phone: '9876543210',
+    aadhar: '12345', // invalid length
+    skills: ['First Aid & Triage'],
+    availability: 'Weekends',
+  });
+  assert.equal(parsed.success, false);
+});
+
+test('Volunteer Validation: Invalid Indian mobile number is rejected', () => {
+  const parsed = volunteerProfileSchema.safeParse({
+    name: 'Dr. Priya Sharma',
+    email: 'priya@emergency.org',
+    phone: '1234567890', // does not start with 6-9
+    aadhar: '555544443333',
+    skills: ['First Aid & Triage'],
     availability: 'Weekends',
   });
   assert.equal(parsed.success, false);

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { Menu, X, AlertTriangle, Shield } from 'lucide-react';
+import { Menu, X, AlertTriangle, Shield, Users } from 'lucide-react';
 import { ReliefNetLogo } from '@/components/ui/Logo';
 import { cn } from '@/lib/utils';
 
@@ -59,10 +59,17 @@ export function Navbar() {
               Report Incident
             </Link>
             <Link
-              href="/auth/login"
-              className="flex items-center gap-2 rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
+              href="/volunteers/login"
+              className="flex items-center gap-1.5 rounded-md border border-slate-700/80 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
             >
-              <Shield className="h-4 w-4" />
+              <Users className="h-3.5 w-3.5 text-orange-400" />
+              Volunteer Login
+            </Link>
+            <Link
+              href="/auth/login"
+              className="flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-300 hover:text-white hover:bg-blue-500/20 transition-colors"
+            >
+              <Shield className="h-3.5 w-3.5 text-blue-400" />
               Coordinator Login
             </Link>
           </div>
@@ -107,11 +114,19 @@ export function Navbar() {
               Report Incident
             </Link>
             <Link
-              href="/auth/login"
+              href="/volunteers/login"
               onClick={() => setMobileOpen(false)}
               className="flex items-center justify-center gap-2 rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300"
             >
-              <Shield className="h-4 w-4" />
+              <Users className="h-4 w-4 text-orange-400" />
+              Volunteer Login
+            </Link>
+            <Link
+              href="/auth/login"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center justify-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-300"
+            >
+              <Shield className="h-4 w-4 text-blue-400" />
               Coordinator Login
             </Link>
           </div>

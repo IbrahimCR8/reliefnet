@@ -69,9 +69,25 @@ export const signUpSchema = z
   });
 
 export const volunteerProfileSchema = z.object({
+  name: z.string().min(2, 'Full name must be at least 2 characters').max(100),
+  email: z.string().email('Enter a valid email address'),
+  phone: z
+    .string()
+    .regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit Indian mobile number'),
+  aadhar: z
+    .string()
+    .transform((val) => val.replace(/\s+/g, ''))
+    .refine((val) => /^\d{12}$/.test(val), {
+      message: 'Aadhaar number must be exactly 12 digits',
+    }),
   skills: z.array(z.string()).min(1, 'Select at least one skill'),
   availability: z.string().min(3, 'Describe your availability'),
   organization: z.string().max(100).optional(),
+});
+
+export const volunteerLoginSchema = z.object({
+  email: z.string().email('Enter a valid email address'),
+  phoneOrAadhar: z.string().min(4, 'Enter registered phone or Aadhaar number'),
 });
 
 export const statusUpdateSchema = z.object({
