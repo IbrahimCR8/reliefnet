@@ -76,13 +76,7 @@ export default function VolunteerLoginPage() {
         setSession({
           name: data.user?.user_metadata?.full_name || email.split('@')[0],
           email,
-          status: 'deployed',
-          assignedMission: {
-            title: 'Flood Evacuation & Medical First Aid Support',
-            location: 'Begumpet Zone 4, Hyderabad',
-            priority: 'High Priority',
-            instructions: 'Report to Field Station #3 coordinator. Bring first-aid kit and high-visibility vest.',
-          },
+          status: 'available',
         });
       } else {
         // Demo simulation
@@ -90,13 +84,7 @@ export default function VolunteerLoginPage() {
           setSession({
             name: email.split('@')[0].toUpperCase(),
             email,
-            status: 'deployed',
-            assignedMission: {
-              title: 'Flood Evacuation & Medical First Aid Support',
-              location: 'Begumpet Zone 4, Hyderabad',
-              priority: 'High Priority',
-              instructions: 'Report to Field Station #3 coordinator. Bring first-aid kit and high-visibility vest.',
-            },
+            status: 'available',
           });
         }, 500);
       }

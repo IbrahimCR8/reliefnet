@@ -12,7 +12,7 @@ const navLinks = [
   { href: '/incidents', label: 'Incidents' },
   { href: '/report', label: 'Report' },
   { href: '/volunteers', label: 'Volunteers' },
-  { href: '/coordinator', label: 'Coordinator Console' },
+  { href: '/coordinator', label: 'Coordinator' },
   { href: '/dashboard', label: 'Dashboard' },
 ];
 
