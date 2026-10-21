@@ -5,13 +5,12 @@ import Link from 'next/link';
 import {
   Users,
   Shield,
-  CreditCard,
   Mail,
+  Lock,
   CheckCircle,
   AlertTriangle,
   ArrowRight,
   LogOut,
-  Clock,
   MapPin,
   Activity
 } from 'lucide-react';
@@ -21,12 +20,11 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ReliefNetLogo } from '@/components/ui/Logo';
 import { isDemoMode } from '@/lib/demo-data';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface VolunteerSession {
   name: string;
   email: string;
-  phone: string;
-  aadharMasked: string;
   status: 'available' | 'deployed';
   assignedMission?: {
     title: string;
@@ -39,7 +37,7 @@ interface VolunteerSession {
 export default function VolunteerLoginPage() {
   const isDemo = isDemoMode();
   const [email, setEmail] = useState('');
-  const [govIdOrPhone, setGovIdOrPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -55,36 +53,64 @@ export default function VolunteerLoginPage() {
       return;
     }
 
-    if (govIdOrPhone.trim().length < 4) {
-      setError('Please provide your registered 10-digit mobile number or Aadhaar number.');
+    if (!password || password.length < 6) {
+      setError('Password must be at least 6 characters.');
       return;
     }
 
     setLoading(true);
 
-    // Simulate volunteer authentication and session lookup
-    setTimeout(() => {
+    try {
+      if (isSupabaseConfigured()) {
+        const supabase = createClient();
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (authError) {
+          setError(authError.message);
+          return;
+        }
+
+        setSession({
+          name: data.user?.user_metadata?.full_name || email.split('@')[0],
+          email,
+          status: 'deployed',
+          assignedMission: {
+            title: 'Flood Evacuation & Medical First Aid Support',
+            location: 'Begumpet Zone 4, Hyderabad',
+            priority: 'High Priority',
+            instructions: 'Report to Field Station #3 coordinator. Bring first-aid kit and high-visibility vest.',
+          },
+        });
+      } else {
+        // Demo simulation
+        setTimeout(() => {
+          setSession({
+            name: email.split('@')[0].toUpperCase(),
+            email,
+            status: 'deployed',
+            assignedMission: {
+              title: 'Flood Evacuation & Medical First Aid Support',
+              location: 'Begumpet Zone 4, Hyderabad',
+              priority: 'High Priority',
+              instructions: 'Report to Field Station #3 coordinator. Bring first-aid kit and high-visibility vest.',
+            },
+          });
+        }, 500);
+      }
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
       setLoading(false);
-      setSession({
-        name: email.split('@')[0].replace('.', ' ').toUpperCase(),
-        email: email.trim(),
-        phone: govIdOrPhone.length === 10 ? `+91 ${govIdOrPhone}` : '+91 9876543210',
-        aadharMasked: '•••• •••• ' + (govIdOrPhone.length >= 4 ? govIdOrPhone.slice(-4) : '7890'),
-        status: 'deployed',
-        assignedMission: {
-          title: 'Flood Evacuation & Medical First Aid Support',
-          location: 'Begumpet Zone 4, Hyderabad',
-          priority: 'High Priority',
-          instructions: 'Report to Field Station #3 coordinator. Bring first-aid kit and high-visibility vest.',
-        },
-      });
-    }, 600);
+    }
   };
 
   const handleSignOut = () => {
     setSession(null);
     setEmail('');
-    setGovIdOrPhone('');
+    setPassword('');
   };
 
   return (
@@ -96,11 +122,11 @@ export default function VolunteerLoginPage() {
             <ReliefNetLogo className="h-12 w-12" />
           </div>
           <h1 className="text-2xl font-bold text-white flex items-center justify-center gap-2">
-            <Users className="h-6 w-6 text-orange-400" />
-            Volunteer Portal
+            <Users className="h-6 w-6 text-blue-400" />
+            Volunteer Login
           </h1>
           <p className="text-slate-400 mt-1 text-sm">
-            Disaster responder access and field deployment check-in
+            Sign in with your email and password to access the responder portal
           </p>
         </div>
 
@@ -125,15 +151,7 @@ export default function VolunteerLoginPage() {
               {/* Credentials badge */}
               <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 text-xs space-y-1.5">
                 <div className="flex justify-between text-slate-400">
-                  <span>Registered Mobile:</span>
-                  <span className="text-slate-200">{session.phone}</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Aadhaar ID:</span>
-                  <span className="text-orange-300 font-mono">{session.aadharMasked}</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Operational Status:</span>
+                  <span>Responder Status:</span>
                   <span className="text-emerald-400 font-semibold uppercase tracking-wider">
                     {session.status === 'deployed' ? 'Active Field Deployment' : 'Ready on Standby'}
                   </span>
@@ -146,7 +164,7 @@ export default function VolunteerLoginPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-orange-400 flex items-center gap-1.5 uppercase tracking-wide">
                       <Activity className="h-4 w-4" />
-                      Current Assigned Mission
+                      Assigned Mission
                     </span>
                     <Badge className="bg-orange-500/20 text-orange-300 border-orange-500/30">
                       {session.assignedMission.priority}
@@ -190,7 +208,7 @@ export default function VolunteerLoginPage() {
             </CardBody>
           </Card>
         ) : (
-          /* Login Form */
+          /* Login Form (Email and Password only) */
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
             {error && (
               <div className="mb-5 p-3 bg-red-950/40 border border-red-700/60 rounded-lg flex gap-2 text-sm text-red-300">
@@ -203,7 +221,7 @@ export default function VolunteerLoginPage() {
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
                   <Mail className="h-4 w-4 text-slate-400" />
-                  Registered Email Address
+                  Email Address
                 </label>
                 <Input
                   id="email"
@@ -218,22 +236,20 @@ export default function VolunteerLoginPage() {
               </div>
 
               <div>
-                <label htmlFor="govid" className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <CreditCard className="h-4 w-4 text-orange-400" />
-                  Phone Number OR Aadhaar Card Number
+                <label htmlFor="pass" className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Lock className="h-4 w-4 text-slate-400" />
+                  Password
                 </label>
                 <Input
-                  id="govid"
-                  type="text"
-                  value={govIdOrPhone}
-                  onChange={(e) => setGovIdOrPhone(e.target.value)}
-                  placeholder="10-digit Phone or 12-digit Aadhaar"
+                  id="pass"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
                   required
                   disabled={loading}
+                  autoComplete="current-password"
                 />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Enter the phone number or Aadhaar number you used during volunteer enrollment.
-                </p>
               </div>
 
               <Button
@@ -242,16 +258,16 @@ export default function VolunteerLoginPage() {
                 className="w-full gap-2"
                 variant="primary"
               >
-                {loading ? 'Checking Credentials…' : 'Sign In as Volunteer'}
+                {loading ? 'Signing In…' : 'Sign In as Volunteer'}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </form>
 
             <div className="mt-6 text-center space-y-2 text-sm pt-2 border-t border-slate-800">
               <p className="text-slate-400 text-xs">
-                Need to register your skills?{' '}
+                Need to register with Government ID?{' '}
                 <Link href="/volunteers" className="text-orange-400 hover:text-orange-300 underline underline-offset-2">
-                  Volunteer Enrollment Form
+                  Volunteer Register
                 </Link>
               </p>
               <p>

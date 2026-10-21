@@ -80,6 +80,8 @@ export const volunteerProfileSchema = z.object({
     .refine((val) => /^\d{12}$/.test(val), {
       message: 'Aadhaar number must be exactly 12 digits',
     }),
+  address: z.string().min(5, 'Please provide your address (min 5 characters)'),
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
   skills: z.array(z.string()).min(1, 'Select at least one skill'),
   availability: z.string().min(3, 'Describe your availability'),
   organization: z.string().max(100).optional(),
@@ -87,7 +89,7 @@ export const volunteerProfileSchema = z.object({
 
 export const volunteerLoginSchema = z.object({
   email: z.string().email('Enter a valid email address'),
-  phoneOrAadhar: z.string().min(4, 'Enter registered phone or Aadhaar number'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
 export const statusUpdateSchema = z.object({

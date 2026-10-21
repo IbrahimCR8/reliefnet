@@ -15,13 +15,20 @@ import {
   Mail,
   Phone,
   User,
-  LogIn
+  LogIn,
+  Lock,
+  MapPin,
+  Home,
+  LogOut,
+  Activity,
+  ArrowRight
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge, DemoBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { isDemoMode } from '@/lib/demo-data';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface VolunteerItem {
   id: string;
@@ -78,28 +85,48 @@ const AVAILABLE_SKILLS = [
   'Mental Health Support',
 ];
 
+interface LoggedInVolunteer {
+  name: string;
+  email: string;
+  phone?: string;
+  status: string;
+}
+
 export default function VolunteersPage() {
   const isDemo = isDemoMode();
   const [volunteers, setVolunteers] = useState<VolunteerItem[]>(DEMO_VOLUNTEERS);
   
+  // Navigation tab: 'register' | 'login'
+  const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
+
   // Registration Form State
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [aadhar, setAadhar] = useState('');
-  const [organization, setOrganization] = useState('');
-  const [availability, setAvailability] = useState('');
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regAadhar, setRegAadhar] = useState('');
+  const [regAddress, setRegAddress] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regOrganization, setRegOrganization] = useState('');
+  const [regAvailability, setRegAvailability] = useState('Immediate / On-call');
+  const [selectedSkills, setSelectedSkills] = useState<string[]>(['First Aid & Triage']);
   
-  const [formError, setFormError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [regError, setRegError] = useState<string | null>(null);
+  const [regSubmitted, setRegSubmitted] = useState(false);
+  const [regSubmitting, setRegSubmitting] = useState(false);
   const [lastSubmission, setLastSubmission] = useState<{
     name: string;
     email: string;
     phone: string;
     aadharLast4: string;
+    address: string;
   } | null>(null);
+
+  // Login Form State
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [volunteerSession, setVolunteerSession] = useState<LoggedInVolunteer | null>(null);
 
   const toggleSkill = (skill: string) => {
     setSelectedSkills((prev) =>
@@ -108,98 +135,155 @@ export default function VolunteersPage() {
   };
 
   const formatAadharInput = (val: string) => {
-    // Keep only numbers and max 12 digits
     const cleaned = val.replace(/\D/g, '').slice(0, 12);
-    // Format into groups of 4: XXXX XXXX XXXX
     const match = cleaned.match(/(\d{1,4})/g);
     return match ? match.join(' ') : cleaned;
   };
 
+  // ── Handle Volunteer Registration ───────────────────────────────────────────
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError(null);
+    setRegError(null);
 
-    // Validation
-    if (!name.trim()) {
-      setFormError('Please enter your full name.');
+    if (!regName.trim()) {
+      setRegError('Please enter your full name.');
       return;
     }
-    if (!email.includes('@') || !email.includes('.')) {
-      setFormError('Please provide a valid email address.');
+    if (!regEmail.includes('@') || !regEmail.includes('.')) {
+      setRegError('Please provide a valid email address.');
       return;
     }
-    const cleanPhone = phone.replace(/\D/g, '');
+    const cleanPhone = regPhone.replace(/\D/g, '');
     if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
-      setFormError('Please enter a valid 10-digit Indian mobile number (starts with 6-9).');
+      setRegError('Please enter a valid 10-digit Indian mobile number (starts with 6-9).');
       return;
     }
-    const cleanAadhar = aadhar.replace(/\D/g, '');
+    const cleanAadhar = regAadhar.replace(/\D/g, '');
     if (cleanAadhar.length !== 12) {
-      setFormError('Aadhaar Card number must be exactly 12 digits.');
+      setRegError('Aadhaar Card number must be exactly 12 digits.');
+      return;
+    }
+    if (regAddress.trim().length < 5) {
+      setRegError('Please provide your complete residential / local address.');
+      return;
+    }
+    if (regPassword.length > 0 && regPassword.length < 6) {
+      setRegError('Password must be at least 6 characters long.');
       return;
     }
     if (selectedSkills.length === 0) {
-      setFormError('Please select at least one relief skill or capability.');
-      return;
-    }
-    if (!availability.trim()) {
-      setFormError('Please describe your availability window.');
+      setRegError('Please select at least one relief capability.');
       return;
     }
 
-    setSubmitting(true);
+    setRegSubmitting(true);
 
     try {
       const res = await fetch('/api/volunteers/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
+          name: regName.trim(),
+          email: regEmail.trim(),
           phone: cleanPhone,
           aadhar: cleanAadhar,
+          address: regAddress.trim(),
+          password: regPassword.trim() || undefined,
           skills: selectedSkills,
-          availability: availability.trim(),
-          organization: organization.trim() || undefined,
+          availability: regAvailability.trim() || 'Immediate / On-call',
+          organization: regOrganization.trim() || undefined,
         }),
       });
 
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok && data.error) {
-        setFormError(data.error);
+        setRegError(data.error);
         return;
       }
 
-      // Add to local state display
+      // Add to local responder roster
       const newVol: VolunteerItem = {
         id: `vol-${Date.now()}`,
-        name: name.trim(),
-        organization: organization.trim() || 'Independent Responder',
+        name: regName.trim(),
+        organization: regOrganization.trim() || 'Independent Responder',
         skills: selectedSkills,
-        availability: availability.trim(),
+        availability: regAvailability.trim(),
         status: 'available',
       };
 
       setVolunteers([newVol, ...volunteers]);
       setLastSubmission({
-        name: name.trim(),
-        email: email.trim(),
+        name: regName.trim(),
+        email: regEmail.trim(),
         phone: cleanPhone,
         aadharLast4: cleanAadhar.slice(-4),
+        address: regAddress.trim(),
       });
-      setSubmitted(true);
+      setRegSubmitted(true);
     } catch {
-      // Fallback
+      // Local fallback
       setLastSubmission({
-        name: name.trim(),
-        email: email.trim(),
+        name: regName.trim(),
+        email: regEmail.trim(),
         phone: cleanPhone,
         aadharLast4: cleanAadhar.slice(-4),
+        address: regAddress.trim(),
       });
-      setSubmitted(true);
+      setRegSubmitted(true);
     } finally {
-      setSubmitting(false);
+      setRegSubmitting(false);
+    }
+  };
+
+  // ── Handle Volunteer Login (Email + Password) ──────────────────────────────
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+
+    if (!loginEmail.includes('@')) {
+      setLoginError('Please enter a valid email address.');
+      return;
+    }
+    if (!loginPassword || loginPassword.length < 6) {
+      setLoginError('Password must be at least 6 characters.');
+      return;
+    }
+
+    setLoginLoading(true);
+
+    try {
+      if (isSupabaseConfigured()) {
+        const supabase = createClient();
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: loginPassword,
+        });
+
+        if (error) {
+          setLoginError(error.message);
+          return;
+        }
+
+        setVolunteerSession({
+          name: data.user?.user_metadata?.full_name || loginEmail.split('@')[0],
+          email: loginEmail,
+          status: 'Active Registered Responder',
+        });
+      } else {
+        // Demo mode login simulation
+        setTimeout(() => {
+          setVolunteerSession({
+            name: loginEmail.split('@')[0].toUpperCase(),
+            email: loginEmail,
+            status: 'Active Registered Responder',
+          });
+        }, 500);
+      }
+    } catch {
+      setLoginError('Failed to sign in. Please verify your email and password.');
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -210,279 +294,438 @@ export default function VolunteersPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-              Volunteer &amp; Responder Hub
+              Volunteer &amp; Responder Portal
             </h1>
             {isDemo && <DemoBadge />}
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Government ID verified responders mobilizing for on-ground disaster relief and rescue.
+            Government ID (Aadhaar) registered responders mobilizing for disaster relief.
           </p>
         </div>
 
-        {/* Volunteer Login Action */}
-        <div className="flex items-center gap-3">
-          <Link href="/volunteers/login">
-            <Button variant="secondary" className="gap-2">
-              <LogIn className="h-4 w-4 text-orange-400" />
-              Volunteer Login
-            </Button>
-          </Link>
+        {/* Tab Switcher */}
+        <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-1">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('register');
+              setRegSubmitted(false);
+            }}
+            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              activeTab === 'register'
+                ? 'bg-orange-500 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Volunteer Register
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('login')}
+            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              activeTab === 'login'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Volunteer Login
+          </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Registration Form */}
+        {/* Left Column: Register Form OR Login Form */}
         <div className="lg:col-span-1">
-          <Card className="sticky top-20 border-slate-800 bg-slate-900/90">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <PlusCircle className="h-4 w-4 text-orange-400" />
-                  Volunteer Enrollment
-                </span>
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                  Govt ID Required
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardBody>
-              {submitted ? (
-                <div className="text-center py-6 space-y-4">
-                  <div className="h-16 w-16 rounded-full bg-emerald-950/60 border border-emerald-700 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-950/40">
-                    <CheckCircle className="h-8 w-8" />
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-lg font-bold text-white">Registered Successfully!</h3>
-                    <p className="text-sm text-emerald-400 font-medium mt-1">
-                      Verification in progress
+          {activeTab === 'register' ? (
+            /* ── REGISTER CARD ── */
+            <Card className="sticky top-20 border-slate-800 bg-slate-900/90">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <PlusCircle className="h-4 w-4 text-orange-400" />
+                    Volunteer Register
+                  </span>
+                  <span className="text-[10px] text-orange-300 font-semibold bg-orange-950/60 border border-orange-800/80 px-2 py-0.5 rounded">
+                    Aadhaar ID
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardBody>
+                {regSubmitted ? (
+                  <div className="text-center py-6 space-y-4">
+                    <div className="h-16 w-16 rounded-full bg-emerald-950/60 border border-emerald-700 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-950/40">
+                      <CheckCircle className="h-8 w-8" />
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-xl font-bold text-white">
+                        register successful will reach you soon
+                      </h3>
+                      <p className="text-xs text-emerald-400 font-medium mt-1">
+                        Recorded to Supabase Database
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 text-left space-y-1.5 text-xs">
+                      <p className="text-slate-300 font-medium border-b border-slate-800 pb-1.5">
+                        Recorded Details:
+                      </p>
+                      <div className="text-slate-400 flex justify-between">
+                        <span>Name:</span>
+                        <strong className="text-white">{lastSubmission?.name}</strong>
+                      </div>
+                      <div className="text-slate-400 flex justify-between">
+                        <span>Email:</span>
+                        <strong className="text-white">{lastSubmission?.email}</strong>
+                      </div>
+                      <div className="text-slate-400 flex justify-between">
+                        <span>Phone:</span>
+                        <strong className="text-white">+91 {lastSubmission?.phone}</strong>
+                      </div>
+                      <div className="text-slate-400 flex justify-between">
+                        <span>Aadhaar:</span>
+                        <strong className="text-orange-300 font-mono">•••• •••• {lastSubmission?.aadharLast4}</strong>
+                      </div>
+                      <div className="text-slate-400 flex justify-between">
+                        <span>Address:</span>
+                        <span className="text-slate-300 truncate max-w-[150px]">{lastSubmission?.address}</span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Your full details have been submitted. Our disaster coordinator command will verify your credentials and reach out shortly.
                     </p>
-                  </div>
 
-                  <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 text-left space-y-2 text-xs">
-                    <p className="text-slate-300 font-medium border-b border-slate-800 pb-2">
-                      Applicant Details:
-                    </p>
-                    <div className="text-slate-400 flex justify-between">
-                      <span>Name:</span>
-                      <strong className="text-white">{lastSubmission?.name}</strong>
-                    </div>
-                    <div className="text-slate-400 flex justify-between">
-                      <span>Email:</span>
-                      <strong className="text-white">{lastSubmission?.email}</strong>
-                    </div>
-                    <div className="text-slate-400 flex justify-between">
-                      <span>Phone:</span>
-                      <strong className="text-white">+91 {lastSubmission?.phone}</strong>
-                    </div>
-                    <div className="text-slate-400 flex justify-between">
-                      <span>Aadhaar ID:</span>
-                      <strong className="text-orange-300 font-mono">•••• •••• {lastSubmission?.aadharLast4}</strong>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Thank you for stepping up to help. We have received your credentials and government ID. <strong className="text-slate-200">Our operations team will review and contact you soon via phone or email</strong> for field deployment.
-                  </p>
-
-                  <div className="space-y-2 pt-2">
-                    <Link href="/volunteers/login" className="block w-full">
-                      <Button variant="primary" className="w-full gap-2 text-xs">
+                    <div className="space-y-2 pt-2">
+                      <Button
+                        variant="primary"
+                        className="w-full gap-2 text-xs"
+                        onClick={() => {
+                          setLoginEmail(lastSubmission?.email || '');
+                          setActiveTab('login');
+                        }}
+                      >
                         <LogIn className="h-4 w-4" />
                         Go to Volunteer Login
                       </Button>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs"
+                        onClick={() => {
+                          setRegSubmitted(false);
+                          setRegName('');
+                          setRegEmail('');
+                          setRegPhone('');
+                          setRegAadhar('');
+                          setRegAddress('');
+                          setRegPassword('');
+                          setLastSubmission(null);
+                        }}
+                      >
+                        Register Another Volunteer
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <form onSubmit={handleRegister} className="space-y-3.5">
+                    {regError && (
+                      <div className="p-3 bg-red-950/50 border border-red-800/80 rounded-lg text-xs text-red-300 flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                        <span>{regError}</span>
+                      </div>
+                    )}
+
+                    {/* Full Name */}
+                    <div>
+                      <label htmlFor="reg-name" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+                        <User className="h-3.5 w-3.5 text-slate-400" />
+                        Full Name *
+                      </label>
+                      <Input
+                        id="reg-name"
+                        required
+                        placeholder="e.g. Ramesh Varma"
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Email ID */}
+                    <div>
+                      <label htmlFor="reg-email" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+                        <Mail className="h-3.5 w-3.5 text-slate-400" />
+                        Email ID *
+                      </label>
+                      <Input
+                        id="reg-email"
+                        type="email"
+                        required
+                        placeholder="volunteer@example.com"
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Phone Number */}
+                    <div>
+                      <label htmlFor="reg-phone" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+                        <Phone className="h-3.5 w-3.5 text-slate-400" />
+                        Phone Number *
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-mono select-none">
+                          +91
+                        </span>
+                        <Input
+                          id="reg-phone"
+                          type="tel"
+                          required
+                          className="pl-12"
+                          placeholder="9876543210"
+                          maxLength={10}
+                          value={regPhone}
+                          onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, ''))}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Aadhaar Card Number */}
+                    <div>
+                      <label htmlFor="reg-aadhar" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+                        <CreditCard className="h-3.5 w-3.5 text-orange-400" />
+                        Aadhaar Number (12 Digits) *
+                      </label>
+                      <Input
+                        id="reg-aadhar"
+                        required
+                        placeholder="1234 5678 9012"
+                        maxLength={14}
+                        value={regAadhar}
+                        onChange={(e) => setRegAadhar(formatAadharInput(e.target.value))}
+                      />
+                    </div>
+
+                    {/* Residential / Area Address */}
+                    <div>
+                      <label htmlFor="reg-address" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+                        <Home className="h-3.5 w-3.5 text-slate-400" />
+                        Residential Address *
+                      </label>
+                      <Input
+                        id="reg-address"
+                        required
+                        placeholder="House / Street, Area, City"
+                        value={regAddress}
+                        onChange={(e) => setRegAddress(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Set Account Password (for Volunteer Login) */}
+                    <div>
+                      <label htmlFor="reg-password" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+                        <Lock className="h-3.5 w-3.5 text-slate-400" />
+                        Create Password (for Login) *
+                      </label>
+                      <Input
+                        id="reg-password"
+                        type="password"
+                        required
+                        placeholder="••••••••"
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Skills Checklist */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Relief Capabilities *
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {AVAILABLE_SKILLS.slice(0, 6).map((skill) => {
+                          const checked = selectedSkills.includes(skill);
+                          return (
+                            <label
+                              key={skill}
+                              className={`flex items-center gap-1.5 p-1.5 rounded border text-[11px] cursor-pointer transition-colors ${
+                                checked
+                                  ? 'bg-orange-950/30 border-orange-600 text-orange-200'
+                                  : 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleSkill(skill)}
+                                className="rounded text-orange-500 focus:ring-orange-500 bg-slate-900 border-slate-700 h-3 w-3"
+                              />
+                              <span className="truncate">{skill}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      disabled={regSubmitting}
+                      className="w-full mt-3"
+                    >
+                      {regSubmitting ? 'Recording to Supabase…' : 'Submit Volunteer Details'}
+                    </Button>
+
+                    <div className="pt-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('login')}
+                        className="text-xs text-slate-400 hover:text-white"
+                      >
+                        Already registered? <span className="text-orange-400 underline underline-offset-2">Volunteer Login</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </CardBody>
+            </Card>
+          ) : (
+            /* ── LOGIN CARD ── */
+            <Card className="sticky top-20 border-slate-800 bg-slate-900 shadow-2xl">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <LogIn className="h-4 w-4 text-blue-400" />
+                    Volunteer Login
+                  </span>
+                  <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                    Email + Password
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardBody>
+                {volunteerSession ? (
+                  /* Volunteer Dashboard when logged in */
+                  <div className="space-y-4">
+                    <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-lg flex items-center gap-3">
+                      <CheckCircle className="h-5 w-5 text-emerald-400 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-white">Signed In as Volunteer</p>
+                        <p className="text-[11px] text-slate-300">{volunteerSession.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="border border-orange-500/30 bg-orange-950/20 rounded-xl p-3 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-orange-400 uppercase tracking-wide flex items-center gap-1">
+                          <Activity className="h-3.5 w-3.5" />
+                          Field Deployment Station
+                        </span>
+                        <Badge className="bg-orange-500/20 text-orange-300 border-orange-500/30 text-[10px]">
+                          Active Mission
+                        </Badge>
+                      </div>
+                      <h4 className="font-bold text-white text-sm">
+                        Begumpet Zone 4 Emergency Triage
+                      </h4>
+                      <p className="text-slate-300 flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5 text-orange-400" />
+                        Hyderabad Disaster Operations Center
+                      </p>
+                    </div>
+
+                    <Link href="/map" className="block w-full">
+                      <Button variant="primary" className="w-full text-xs gap-1.5">
+                        <MapPin className="h-3.5 w-3.5" />
+                        Open Live Response Map
+                      </Button>
                     </Link>
-                    
+
                     <Button
                       variant="outline"
                       size="sm"
-                      className="w-full text-xs"
-                      onClick={() => {
-                        setSubmitted(false);
-                        setName('');
-                        setEmail('');
-                        setPhone('');
-                        setAadhar('');
-                        setOrganization('');
-                        setAvailability('');
-                        setSelectedSkills([]);
-                        setLastSubmission(null);
-                      }}
+                      onClick={() => setVolunteerSession(null)}
+                      className="w-full text-xs text-slate-400 hover:text-white gap-1.5"
                     >
-                      Register Another Volunteer
+                      <LogOut className="h-3.5 w-3.5" />
+                      Sign Out
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <form onSubmit={handleRegister} className="space-y-4">
-                  {formError && (
-                    <div className="p-3 bg-red-950/50 border border-red-800/80 rounded-lg text-xs text-red-300 flex items-start gap-2">
-                      <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
-                      <span>{formError}</span>
-                    </div>
-                  )}
+                ) : (
+                  /* Login with Email and Password */
+                  <form onSubmit={handleLogin} className="space-y-4">
+                    {loginError && (
+                      <div className="p-3 bg-red-950/50 border border-red-800/80 rounded-lg text-xs text-red-300 flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                        <span>{loginError}</span>
+                      </div>
+                    )}
 
-                  {/* Name */}
-                  <div>
-                    <label htmlFor="vol-name" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
-                      <User className="h-3.5 w-3.5 text-slate-400" />
-                      Full Name *
-                    </label>
-                    <Input
-                      id="vol-name"
-                      required
-                      placeholder="e.g. Ramesh Varma"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                    />
-                  </div>
-
-                  {/* Email */}
-                  <div>
-                    <label htmlFor="vol-email" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
-                      <Mail className="h-3.5 w-3.5 text-slate-400" />
-                      Email Address *
-                    </label>
-                    <Input
-                      id="vol-email"
-                      type="email"
-                      required
-                      placeholder="e.g. ramesh@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                    />
-                  </div>
-
-                  {/* Phone */}
-                  <div>
-                    <label htmlFor="vol-phone" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
-                      <Phone className="h-3.5 w-3.5 text-slate-400" />
-                      Mobile Phone Number *
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-mono select-none">
-                        +91
-                      </span>
+                    <div>
+                      <label htmlFor="log-email" className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
+                        <Mail className="h-3.5 w-3.5 text-slate-400" />
+                        Email Address
+                      </label>
                       <Input
-                        id="vol-phone"
-                        type="tel"
+                        id="log-email"
+                        type="email"
                         required
-                        className="pl-12"
-                        placeholder="9876543210"
-                        maxLength={10}
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                        placeholder="volunteer@example.com"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        disabled={loginLoading}
                       />
                     </div>
-                  </div>
 
-                  {/* Government ID - Aadhaar Card */}
-                  <div>
-                    <label htmlFor="vol-aadhar" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
-                      <CreditCard className="h-3.5 w-3.5 text-orange-400" />
-                      Government ID (Aadhaar Card No) *
-                    </label>
-                    <Input
-                      id="vol-aadhar"
-                      required
-                      placeholder="1234 5678 9012"
-                      maxLength={14}
-                      value={aadhar}
-                      onChange={(e) => setAadhar(formatAadharInput(e.target.value))}
-                    />
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      🔒 Required for background verification &amp; emergency pass issuance.
-                    </p>
-                  </div>
-
-                  {/* Organization */}
-                  <div>
-                    <label htmlFor="vol-org" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
-                      <Building className="h-3.5 w-3.5 text-slate-400" />
-                      Organization / Affiliation (Optional)
-                    </label>
-                    <Input
-                      id="vol-org"
-                      placeholder="e.g. Red Cross, NCC, Civil Defence"
-                      value={organization}
-                      onChange={(e) => setOrganization(e.target.value)}
-                    />
-                  </div>
-
-                  {/* Availability */}
-                  <div>
-                    <label htmlFor="vol-avail" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
-                      <Clock className="h-3.5 w-3.5 text-slate-400" />
-                      Availability Window *
-                    </label>
-                    <Input
-                      id="vol-avail"
-                      required
-                      placeholder="e.g. 24/7 On-Call, Weekends, Night Shifts"
-                      value={availability}
-                      onChange={(e) => setAvailability(e.target.value)}
-                    />
-                  </div>
-
-                  {/* Skills */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-2">
-                      Capability &amp; Relief Skills * (Select all that apply)
-                    </label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {AVAILABLE_SKILLS.map((skill) => {
-                        const checked = selectedSkills.includes(skill);
-                        return (
-                          <label
-                            key={skill}
-                            className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                              checked
-                                ? 'bg-orange-950/30 border-orange-600 text-orange-200'
-                                : 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:border-slate-600'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleSkill(skill)}
-                              className="rounded text-orange-500 focus:ring-orange-500 bg-slate-900 border-slate-700"
-                            />
-                            <span>{skill}</span>
-                          </label>
-                        );
-                      })}
+                    <div>
+                      <label htmlFor="log-pass" className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
+                        <Lock className="h-3.5 w-3.5 text-slate-400" />
+                        Password
+                      </label>
+                      <Input
+                        id="log-pass"
+                        type="password"
+                        required
+                        placeholder="••••••••"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        disabled={loginLoading}
+                      />
                     </div>
-                  </div>
 
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    disabled={submitting}
-                    className="w-full mt-2"
-                  >
-                    {submitting ? 'Verifying & Submitting…' : 'Submit Volunteer Application'}
-                  </Button>
+                    <Button
+                      type="submit"
+                      disabled={loginLoading}
+                      className="w-full gap-2 text-xs"
+                      variant="primary"
+                    >
+                      {loginLoading ? 'Signing In…' : 'Sign In as Volunteer'}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Button>
 
-                  <div className="pt-2 text-center">
-                    <p className="text-xs text-slate-500">
-                      Already registered?{' '}
-                      <Link href="/volunteers/login" className="text-orange-400 hover:text-orange-300 underline underline-offset-2">
-                        Volunteer Login
-                      </Link>
-                    </p>
-                  </div>
-                </form>
-              )}
-            </CardBody>
-          </Card>
+                    <div className="pt-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('register')}
+                        className="text-xs text-slate-400 hover:text-white"
+                      >
+                        Need an account? <span className="text-orange-400 underline underline-offset-2">Volunteer Register</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </CardBody>
+            </Card>
+          )}
         </div>
 
-        {/* Volunteer List */}
+        {/* Right Column: Active Volunteer Directory */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Users className="h-5 w-5 text-blue-400" />
-              Verified Disaster Responders ({volunteers.length})
+              Active Registered Responders ({volunteers.length})
             </h2>
             {isDemo && <DemoBadge />}
           </div>

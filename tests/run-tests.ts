@@ -5,6 +5,7 @@ import {
   loginSchema,
   signUpSchema,
   volunteerProfileSchema,
+  volunteerLoginSchema,
   statusUpdateSchema,
 } from '../src/lib/validations';
 import {
@@ -116,11 +117,25 @@ test('Volunteer Validation: Valid registration passes', () => {
     email: 'priya@emergency.org',
     phone: '9876543210',
     aadhar: '5555 4444 3333',
+    address: 'Flat 402, Begumpet Relief Zone, Hyderabad',
     skills: ['First Aid & Triage', 'Water Rescue'],
     availability: 'Weekends and on-call emergencies',
     organization: 'Civil Protection Corps',
   });
   assert.equal(parsed.success, true);
+});
+
+test('Volunteer Validation: Short address is rejected', () => {
+  const parsed = volunteerProfileSchema.safeParse({
+    name: 'Dr. Priya Sharma',
+    email: 'priya@emergency.org',
+    phone: '9876543210',
+    aadhar: '555544443333',
+    address: 'Hy', // too short
+    skills: ['First Aid & Triage'],
+    availability: 'Weekends',
+  });
+  assert.equal(parsed.success, false);
 });
 
 test('Volunteer Validation: Empty skills array is rejected', () => {
@@ -153,8 +168,25 @@ test('Volunteer Validation: Invalid Indian mobile number is rejected', () => {
     email: 'priya@emergency.org',
     phone: '1234567890', // does not start with 6-9
     aadhar: '555544443333',
+    address: 'Begumpet Relief Center',
     skills: ['First Aid & Triage'],
     availability: 'Weekends',
+  });
+  assert.equal(parsed.success, false);
+});
+
+test('Volunteer Login: Valid email and password pass', () => {
+  const parsed = volunteerLoginSchema.safeParse({
+    email: 'volunteer@reliefnet.org',
+    password: 'securePassword123',
+  });
+  assert.equal(parsed.success, true);
+});
+
+test('Volunteer Login: Short password is rejected', () => {
+  const parsed = volunteerLoginSchema.safeParse({
+    email: 'volunteer@reliefnet.org',
+    password: '123',
   });
   assert.equal(parsed.success, false);
 });
