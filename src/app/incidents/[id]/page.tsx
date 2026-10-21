@@ -1,29 +1,25 @@
 'use client';
 
-import { use } from 'react';
+import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   MapPin,
-  Calendar,
-  Users,
   Clock,
   ArrowLeft,
-  ImageIcon,
   Shield,
   Activity,
-  CheckCircle,
-  HelpCircle,
-  AlertTriangle
+  Users
 } from 'lucide-react';
-import { DEMO_INCIDENTS, DEMO_STATUS_HISTORY, isDemoMode } from '@/lib/demo-data';
-import { DemoBadge, SeverityBadge, StatusBadge } from '@/components/ui/Badge';
+import { SeverityBadge, StatusBadge } from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card';
+import { PageLoading } from '@/components/ui/LoadingSpinner';
 import {
   formatDate,
   timeAgo,
   CATEGORY_LABELS,
   CATEGORY_ICONS,
 } from '@/lib/utils';
+import type { Incident, IncidentStatusHistory } from '@/types';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -31,10 +27,35 @@ interface PageProps {
 
 export default function IncidentDetailPage({ params }: PageProps) {
   const { id } = use(params);
-  const demo = isDemoMode();
+  const [incident, setIncident] = useState<Incident | null>(null);
+  const [statusHistory, setStatusHistory] = useState<IncidentStatusHistory[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const incident = DEMO_INCIDENTS.find((i) => i.id === id);
-  const statusHistory = DEMO_STATUS_HISTORY.filter((h) => h.incident_id === id);
+  useEffect(() => {
+    fetch(`/api/incidents/${id}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Not found');
+        return res.json();
+      })
+      .then((data) => {
+        if (data.incident) {
+          setIncident(data.incident);
+          setStatusHistory(data.history || []);
+        }
+      })
+      .catch(() => {
+        setIncident(null);
+      })
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <PageLoading />
+      </div>
+    );
+  }
 
   if (!incident) {
     return (
@@ -81,7 +102,6 @@ export default function IncidentDetailPage({ params }: PageProps) {
             </span>
             <SeverityBadge severity={incident.severity} />
             <StatusBadge status={incident.status} />
-            {demo && <DemoBadge />}
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
@@ -166,7 +186,7 @@ export default function IncidentDetailPage({ params }: PageProps) {
                 </div>
               ) : (
                 <div className="relative border-l border-slate-800 ml-3 space-y-6 py-2">
-                  {statusHistory.map((hist, idx) => (
+                  {statusHistory.map((hist) => (
                     <div key={hist.id} className="relative pl-6">
                       <div className="absolute -left-1.5 top-1.5 h-3 w-3 rounded-full bg-orange-500 border-2 border-slate-900" />
                       <div className="flex items-center gap-2 mb-1">
