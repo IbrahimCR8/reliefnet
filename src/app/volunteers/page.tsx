@@ -39,41 +39,6 @@ interface VolunteerItem {
   status: 'available' | 'deployed';
 }
 
-const DEMO_VOLUNTEERS: VolunteerItem[] = [
-  {
-    id: 'vol-1',
-    name: 'Dr. Priya Sharma',
-    organization: 'Red Cross Medical Wing',
-    skills: ['Triage', 'Emergency Medicine', 'Pediatric Care'],
-    availability: '24/7 on-call during cyclone phase',
-    status: 'deployed',
-  },
-  {
-    id: 'vol-2',
-    name: 'Karthik Raman',
-    organization: 'Civil Defence Volunteers',
-    skills: ['Water Rescue', 'Boat Operations', 'Search & Rescue'],
-    availability: 'Evenings & Weekends',
-    status: 'available',
-  },
-  {
-    id: 'vol-3',
-    name: 'Amina Begum',
-    organization: 'Community Kitchen Initiative',
-    skills: ['Food Logistics', 'Clean Water Sanitation', 'Shelter Management'],
-    availability: 'Full-time daytime',
-    status: 'deployed',
-  },
-  {
-    id: 'vol-4',
-    name: 'David Chen',
-    organization: 'Disaster Ham Radio Corps',
-    skills: ['Emergency Comms', 'Satellite Internet', 'Solar Power'],
-    availability: 'Immediate deployment',
-    status: 'available',
-  },
-];
-
 const AVAILABLE_SKILLS = [
   'First Aid & Triage',
   'Search & Rescue',
@@ -93,8 +58,19 @@ interface LoggedInVolunteer {
 }
 
 export default function VolunteersPage() {
-  const isDemo = isDemoMode();
-  const [volunteers, setVolunteers] = useState<VolunteerItem[]>(DEMO_VOLUNTEERS);
+  const [volunteers, setVolunteers] = useState<VolunteerItem[]>([]);
+
+  // Fetch real registered volunteers on mount
+  React.useEffect(() => {
+    fetch('/api/volunteers')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.volunteers && Array.isArray(data.volunteers)) {
+          setVolunteers(data.volunteers);
+        }
+      })
+      .catch(() => {});
+  }, []);
   
   // Navigation tab: 'register' | 'login'
   const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
@@ -296,7 +272,6 @@ export default function VolunteersPage() {
             <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
               Volunteer &amp; Responder Portal
             </h1>
-            {isDemo && <DemoBadge />}
           </div>
           <p className="text-sm text-slate-400 mt-1">
             Government ID (Aadhaar) registered responders mobilizing for disaster relief.
@@ -727,56 +702,71 @@ export default function VolunteersPage() {
               <Users className="h-5 w-5 text-blue-400" />
               Active Registered Responders ({volunteers.length})
             </h2>
-            {isDemo && <DemoBadge />}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {volunteers.map((vol) => (
-              <Card key={vol.id} className="hover:border-slate-700 transition-colors">
-                <CardBody className="space-y-3">
-                  <div className="flex items-start justify-between gap-2">
+          {volunteers.length === 0 ? (
+            <Card className="border-slate-800 bg-slate-900/60 p-10 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="p-4 bg-slate-800/80 rounded-full border border-slate-700">
+                  <Users className="h-8 w-8 text-slate-500" />
+                </div>
+              </div>
+              <h3 className="text-base font-semibold text-white mb-2">
+                No Responders Enrolled Yet
+              </h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Be the first responder in the field! Use the <strong className="text-slate-200">Volunteer Register</strong> form on the left with your Aadhaar ID to enroll. Newly registered volunteers appear here automatically.
+              </p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {volunteers.map((vol) => (
+                <Card key={vol.id} className="hover:border-slate-700 transition-colors">
+                  <CardBody className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 className="font-bold text-white text-base">{vol.name}</h3>
+                        <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                          <Building className="h-3 w-3 text-slate-500" />
+                          {vol.organization}
+                        </p>
+                      </div>
+                      <Badge
+                        className={
+                          vol.status === 'deployed'
+                            ? 'bg-orange-950/40 text-orange-400 border-orange-800'
+                            : 'bg-emerald-950/40 text-emerald-400 border-emerald-800'
+                        }
+                      >
+                        {vol.status === 'deployed' ? 'Deployed on Mission' : 'Available on Call'}
+                      </Badge>
+                    </div>
+
                     <div>
-                      <h3 className="font-bold text-white text-base">{vol.name}</h3>
-                      <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                        <Building className="h-3 w-3 text-slate-500" />
-                        {vol.organization}
+                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                        Verified Capabilities
                       </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {vol.skills.map((skill) => (
+                          <span
+                            key={skill}
+                            className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[11px] text-slate-300 font-medium"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                    <Badge
-                      className={
-                        vol.status === 'deployed'
-                          ? 'bg-orange-950/40 text-orange-400 border-orange-800'
-                          : 'bg-emerald-950/40 text-emerald-400 border-emerald-800'
-                      }
-                    >
-                      {vol.status === 'deployed' ? 'Deployed on Mission' : 'Available on Call'}
-                    </Badge>
-                  </div>
 
-                  <div>
-                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                      Verified Capabilities
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {vol.skills.map((skill) => (
-                        <span
-                          key={skill}
-                          className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[11px] text-slate-300 font-medium"
-                        >
-                          {skill}
-                        </span>
-                      ))}
+                    <div className="pt-2 border-t border-slate-800/80 text-xs text-slate-400 flex items-center gap-1.5">
+                      <Clock className="h-3 w-3 text-slate-500" />
+                      <span>Availability: {vol.availability}</span>
                     </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-800/80 text-xs text-slate-400 flex items-center gap-1.5">
-                    <Clock className="h-3 w-3 text-slate-500" />
-                    <span>Availability: {vol.availability}</span>
-                  </div>
-                </CardBody>
-              </Card>
-            ))}
-          </div>
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

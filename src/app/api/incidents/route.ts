@@ -9,13 +9,9 @@ export async function GET(request: NextRequest) {
   const category = searchParams.get('category');
   const severity = searchParams.get('severity');
 
-  // If Supabase is not configured, gracefully return filtered demo data
+  // If Supabase is not configured, return empty incidents list
   if (!isSupabaseConfigured()) {
-    let filtered = [...DEMO_INCIDENTS];
-    if (status) filtered = filtered.filter(i => i.status === status);
-    if (category) filtered = filtered.filter(i => i.category === category);
-    if (severity) filtered = filtered.filter(i => i.severity === severity);
-    return NextResponse.json({ incidents: filtered, is_demo: true });
+    return NextResponse.json({ incidents: [], is_demo: false });
   }
 
   try {

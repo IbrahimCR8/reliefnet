@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Shield,
   CheckCircle,
@@ -22,9 +22,21 @@ import type { Incident, IncidentStatus } from '@/types';
 import Link from 'next/link';
 
 export default function CoordinatorConsolePage() {
-  const isDemo = isDemoMode();
-  const [incidents, setIncidents] = useState<Incident[]>(DEMO_INCIDENTS);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/incidents')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.incidents && Array.isArray(data.incidents)) {
+          setIncidents(data.incidents);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleUpdateStatus = (id: string, newStatus: IncidentStatus) => {
     setIncidents((prev) =>
@@ -32,7 +44,7 @@ export default function CoordinatorConsolePage() {
     );
 
     setActionMessage(
-      `Incident ${id} updated to status "${newStatus}". In production, this operation executes an authorized PostgreSQL trigger with full audit logging.`
+      `Incident updated to status "${newStatus}". In production, this operation executes an authorized PostgreSQL trigger with full audit logging.`
     );
 
     setTimeout(() => {
@@ -53,7 +65,6 @@ export default function CoordinatorConsolePage() {
               <Shield className="h-7 w-7 text-orange-500" />
               Relief Coordinator Console
             </h1>
-            {isDemo && <DemoBadge />}
           </div>
           <p className="text-sm text-slate-400 mt-1">
             Restricted operations terminal for crisis report verification, responder assignment, and mission resolution.

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { Incident } from '@/types';
-import { DEMO_INCIDENTS, isDemoMode } from '@/lib/demo-data';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface UseIncidentsOptions {
@@ -29,12 +28,9 @@ export function useIncidents(options: UseIncidentsOptions = {}): UseIncidentsRes
     setError(null);
 
     try {
-      if (isDemoMode() || !isSupabaseConfigured()) {
-        let filtered = DEMO_INCIDENTS;
-        if (options.status) filtered = filtered.filter(i => i.status === options.status);
-        if (options.category) filtered = filtered.filter(i => i.category === options.category);
-        if (options.severity) filtered = filtered.filter(i => i.severity === options.severity);
-        setIncidents(filtered);
+      if (!isSupabaseConfigured()) {
+        // Production mode without mock data
+        setIncidents([]);
       } else {
         const params = new URLSearchParams();
         if (options.status) params.set('status', options.status);
@@ -47,7 +43,7 @@ export function useIncidents(options: UseIncidentsOptions = {}): UseIncidentsRes
         setIncidents(data.incidents || []);
       }
     } catch (err) {
-      setError(String(err));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -59,12 +55,8 @@ export function useIncidents(options: UseIncidentsOptions = {}): UseIncidentsRes
       setLoading(true);
       setError(null);
       try {
-        if (isDemoMode() || !isSupabaseConfigured()) {
-          let filtered = DEMO_INCIDENTS;
-          if (options.status) filtered = filtered.filter(i => i.status === options.status);
-          if (options.category) filtered = filtered.filter(i => i.category === options.category);
-          if (options.severity) filtered = filtered.filter(i => i.severity === options.severity);
-          if (!ignore) setIncidents(filtered);
+        if (!isSupabaseConfigured()) {
+          if (!ignore) setIncidents([]);
         } else {
           const params = new URLSearchParams();
           if (options.status) params.set('status', options.status);
@@ -77,14 +69,13 @@ export function useIncidents(options: UseIncidentsOptions = {}): UseIncidentsRes
           if (!ignore) setIncidents(data.incidents || []);
         }
       } catch (err) {
-        if (!ignore) setError(String(err));
+        if (!ignore) setError(err instanceof Error ? err.message : String(err));
       } finally {
         if (!ignore) setLoading(false);
       }
     };
 
-    void run();
-
+    run();
     return () => {
       ignore = true;
     };
@@ -95,6 +86,6 @@ export function useIncidents(options: UseIncidentsOptions = {}): UseIncidentsRes
     loading,
     error,
     refetch: fetchIncidents,
-    isDemo: isDemoMode() || !isSupabaseConfigured(),
+    isDemo: false,
   };
 }

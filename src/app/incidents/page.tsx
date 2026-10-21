@@ -1,28 +1,26 @@
 'use client';
 
 import Link from 'next/link';
-import { MapPin, Calendar, Users, Filter, Plus } from 'lucide-react';
-import { DEMO_INCIDENTS, isDemoMode } from '@/lib/demo-data';
-import { DemoBadge, SeverityBadge, StatusBadge } from '@/components/ui/Badge';
-import { CATEGORY_LABELS, CATEGORY_ICONS, formatDate, timeAgo } from '@/lib/utils';
+import { MapPin, Plus, CheckCircle, AlertTriangle } from 'lucide-react';
+import { useIncidents } from '@/hooks/useIncidents';
 import { IncidentCard } from '@/components/incidents/IncidentCard';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageLoading } from '@/components/ui/LoadingSpinner';
+import { Button } from '@/components/ui/Button';
 
 export default function IncidentsPage() {
-  const demo = isDemoMode();
+  const { incidents, loading, error } = useIncidents();
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-              Active Crisis Incidents
-            </h1>
-            {demo && <DemoBadge />}
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+            Active Crisis Incidents
+          </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Browse verified, pending, and resolved relief incidents reported by local communities.
+            Real-time feed of verified, pending, and active disaster relief incidents.
           </p>
         </div>
 
@@ -44,21 +42,33 @@ export default function IncidentsPage() {
         </div>
       </div>
 
-      {/* Demo mode banner */}
-      {demo && (
-        <div className="p-4 bg-amber-950/30 border border-amber-800/60 rounded-xl text-xs text-amber-200">
-          <strong className="text-amber-300">DEMO RECORD DATASET:</strong> The incident cards below
-          represent mock crisis scenarios (flooding, cyclone damage, medical shortages) designed to test
-          and demonstrate the ReliefNet dispatch pipeline.
+      {loading ? (
+        <PageLoading />
+      ) : error ? (
+        <div className="p-4 bg-red-950/40 border border-red-800 rounded-xl text-xs text-red-300">
+          Failed to load live incidents: {error}
+        </div>
+      ) : incidents.length === 0 ? (
+        <EmptyState
+          icon={<CheckCircle className="h-12 w-12 text-emerald-500 mx-auto" />}
+          title="No Active Incidents Reported"
+          description="All response sectors are currently clear. When emergencies are submitted, they will appear here in real-time."
+          action={
+            <Link href="/report">
+              <Button variant="primary" className="gap-2 text-xs">
+                <Plus className="h-4 w-4" />
+                Report an Emergency
+              </Button>
+            </Link>
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {incidents.map((incident) => (
+            <IncidentCard key={incident.id} incident={incident} />
+          ))}
         </div>
       )}
-
-      {/* Incidents grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {DEMO_INCIDENTS.map((incident) => (
-          <IncidentCard key={incident.id} incident={incident} />
-        ))}
-      </div>
     </div>
   );
 }
