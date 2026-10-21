@@ -143,15 +143,12 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 text-center space-y-2 text-sm">
-            <p className="text-slate-400">
-              Don&apos;t have an account?{' '}
-              <Link href="/auth/signup" className="text-blue-400 hover:text-blue-300 underline underline-offset-2">
-                Sign up
-              </Link>
-            </p>
+          <div className="mt-6 text-center space-y-3 text-sm">
+            <div className="p-3 bg-slate-800/60 border border-slate-700/60 rounded-lg text-xs text-slate-400">
+              <span className="font-semibold text-slate-300">Restricted Access:</span> Coordinator access is limited to 3 designated operational personnel. Public registration is closed.
+            </div>
             <p>
-              <Link href="/" className="text-slate-500 hover:text-slate-300 transition-colors">
+              <Link href="/" className="text-slate-500 hover:text-slate-300 transition-colors inline-block mt-1">
                 ← Back to homepage
               </Link>
             </p>

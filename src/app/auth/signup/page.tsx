@@ -77,10 +77,10 @@ export default function SignupPage() {
           </div>
           <h1 className="text-2xl font-bold text-white flex items-center justify-center gap-2">
             <Shield className="h-6 w-6 text-blue-400" />
-            Create Account
+            Coordinator Onboarding
           </h1>
           <p className="text-slate-400 mt-1 text-sm">
-            Register as a ReliefNet coordinator
+            Restricted to 3 designated disaster operations coordinators
           </p>
         </div>
 
