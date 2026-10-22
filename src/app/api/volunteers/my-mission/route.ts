@@ -4,10 +4,10 @@ import { isSupabaseConfigured } from '@/lib/supabase/client';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const email = searchParams.get('email');
+  const identifier = searchParams.get('email') || searchParams.get('identifier') || searchParams.get('id');
 
-  if (!email) {
-    return NextResponse.json({ error: 'Email parameter is required' }, { status: 400 });
+  if (!identifier) {
+    return NextResponse.json({ error: 'Email or Volunteer ID parameter is required' }, { status: 400 });
   }
 
   if (!isSupabaseConfigured()) {
@@ -23,12 +23,15 @@ export async function GET(request: NextRequest) {
       ? await createServiceClient()
       : await createClient();
 
-    // 1. Get volunteer profile
-    const { data: volunteer, error: volError } = await supabase
-      .from('volunteer_profiles')
-      .select('*')
-      .eq('email', email)
-      .single();
+    // 1. Get volunteer profile by email or volunteer_id_code
+    let query = supabase.from('volunteer_profiles').select('*');
+    if (identifier.includes('@')) {
+      query = query.eq('email', identifier.trim());
+    } else {
+      query = query.or(`volunteer_id_code.eq.${identifier.trim().toUpperCase()},id.eq.${identifier.trim()}`);
+    }
+
+    const { data: volunteer, error: volError } = await query.maybeSingle();
 
     if (volError || !volunteer) {
       return NextResponse.json({
@@ -38,17 +41,22 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const volSummary = {
+      id: volunteer.id,
+      name: volunteer.name,
+      email: volunteer.email,
+      phone: volunteer.phone,
+      volunteer_id_code: volunteer.volunteer_id_code || null,
+      verification_status: volunteer.verification_status || 'pending_review',
+      verification_notes: volunteer.verification_notes || null,
+      status: volunteer.assigned_incident_id ? 'deployed' : 'available',
+    };
+
     // 2. Check if an incident is assigned by coordinator
     if (!volunteer.assigned_incident_id) {
       return NextResponse.json({
         has_mission: false,
-        volunteer: {
-          id: volunteer.id,
-          name: volunteer.name,
-          email: volunteer.email,
-          phone: volunteer.phone,
-          status: 'available',
-        },
+        volunteer: volSummary,
         mission: null,
       });
     }
@@ -63,26 +71,14 @@ export async function GET(request: NextRequest) {
     if (incError || !incident) {
       return NextResponse.json({
         has_mission: false,
-        volunteer: {
-          id: volunteer.id,
-          name: volunteer.name,
-          email: volunteer.email,
-          phone: volunteer.phone,
-          status: 'available',
-        },
+        volunteer: volSummary,
         mission: null,
       });
     }
 
     return NextResponse.json({
       has_mission: true,
-      volunteer: {
-        id: volunteer.id,
-        name: volunteer.name,
-        email: volunteer.email,
-        phone: volunteer.phone,
-        status: 'deployed',
-      },
+      volunteer: volSummary,
       mission: {
         incident_id: incident.id,
         reference_code: incident.reference_code,

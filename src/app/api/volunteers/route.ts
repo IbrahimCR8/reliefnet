@@ -10,6 +10,8 @@ export async function GET(request: NextRequest) {
       online_count: 0,
       available_count: 0,
       assigned_count: 0,
+      pending_verification_count: 0,
+      verified_count: 0,
     });
   }
 
@@ -32,6 +34,8 @@ export async function GET(request: NextRequest) {
         online_count: 0,
         available_count: 0,
         assigned_count: 0,
+        pending_verification_count: 0,
+        verified_count: 0,
       });
     }
 
@@ -78,6 +82,8 @@ export async function GET(request: NextRequest) {
     const onlineCount = enriched.filter((v) => v.is_online).length;
     const assignedCount = enriched.filter((v) => Boolean(v.assigned_incident_id)).length;
     const availableCount = enriched.length - assignedCount;
+    const pendingVerificationCount = enriched.filter((v) => v.verification_status !== 'verified').length;
+    const verifiedCount = enriched.filter((v) => v.verification_status === 'verified').length;
 
     return NextResponse.json({
       volunteers: enriched,
@@ -85,6 +91,8 @@ export async function GET(request: NextRequest) {
       online_count: onlineCount,
       available_count: availableCount,
       assigned_count: assignedCount,
+      pending_verification_count: pendingVerificationCount,
+      verified_count: verifiedCount,
     });
   } catch (err) {
     console.error('Failed to query volunteers:', err);
@@ -94,6 +102,8 @@ export async function GET(request: NextRequest) {
       online_count: 0,
       available_count: 0,
       assigned_count: 0,
+      pending_verification_count: 0,
+      verified_count: 0,
     });
   }
 }

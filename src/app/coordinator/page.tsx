@@ -30,7 +30,12 @@ import {
   Radio,
   Send,
   UserMinus,
-  Check
+  Check,
+  PhoneCall,
+  IdCard,
+  Sparkles,
+  ClipboardCheck,
+  X
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -60,6 +65,11 @@ interface VolunteerSummary {
   availability: string;
   organization?: string;
   verification_status: string;
+  volunteer_id_code?: string | null;
+  phone_interview_completed?: boolean;
+  verification_notes?: string | null;
+  verified_at?: string | null;
+  verified_by_email?: string | null;
   is_online?: boolean;
   assigned_incident_id?: string | null;
   assigned_role_task?: string | null;
@@ -88,6 +98,8 @@ export default function CoordinatorConsolePage() {
   const [onlineCount, setOnlineCount] = useState(0);
   const [availableCount, setAvailableCount] = useState(0);
   const [assignedCount, setAssignedCount] = useState(0);
+  const [pendingVerificationCount, setPendingVerificationCount] = useState(0);
+  const [verifiedCount, setVerifiedCount] = useState(0);
 
   const [loadingFeeds, setLoadingFeeds] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -95,13 +107,19 @@ export default function CoordinatorConsolePage() {
   // Navigation inside Console: 'triage' | 'active' | 'volunteers' | 'setup_guide'
   const [activeTab, setActiveTab] = useState<'triage' | 'active' | 'volunteers' | 'setup_guide'>('triage');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
-  const [volunteerFilter, setVolunteerFilter] = useState<'all' | 'online' | 'available' | 'assigned'>('all');
+  const [volunteerRosterTab, setVolunteerRosterTab] = useState<'pending' | 'verified' | 'all'>('pending');
 
   // Assignment Modal State
   const [assigningVolunteer, setAssigningVolunteer] = useState<VolunteerSummary | null>(null);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string>('');
   const [taskInstructions, setTaskInstructions] = useState<string>('Disaster Relief Ground Operations & Triage Support');
   const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
+
+  // Verification & Manual ID Modal State
+  const [verifyingVolunteer, setVerifyingVolunteer] = useState<VolunteerSummary | null>(null);
+  const [manualVolunteerId, setManualVolunteerId] = useState<string>('');
+  const [verificationInterviewNotes, setVerificationInterviewNotes] = useState<string>('Phone interview completed. Candidate identity, location, and relief skills confirmed.');
+  const [verificationSubmitting, setVerificationSubmitting] = useState(false);
 
   const supabaseReady = isSupabaseConfigured();
 
@@ -154,6 +172,8 @@ export default function CoordinatorConsolePage() {
         setOnlineCount(volData.online_count || 0);
         setAvailableCount(volData.available_count || 0);
         setAssignedCount(volData.assigned_count || 0);
+        setPendingVerificationCount(volData.pending_verification_count || 0);
+        setVerifiedCount(volData.verified_count || 0);
       }
     } catch {
       // Keep current state gracefully
@@ -322,6 +342,48 @@ export default function CoordinatorConsolePage() {
     }
   };
 
+  // 8. Handle Manual Volunteer ID Issuance after Phone Interview
+  const handleVerifyAndIssueId = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verifyingVolunteer || !manualVolunteerId.trim()) return;
+
+    setVerificationSubmitting(true);
+    try {
+      const res = await fetch('/api/volunteers/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          volunteer_id: verifyingVolunteer.id,
+          volunteer_id_code: manualVolunteerId.trim(),
+          verification_notes: verificationInterviewNotes,
+          action: 'approve',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to issue Volunteer ID');
+      }
+
+      setActionMessage(`Verified ${verifyingVolunteer.name}! Issued Volunteer ID: ${manualVolunteerId.trim().toUpperCase()}`);
+      setVerifyingVolunteer(null);
+      setManualVolunteerId('');
+      loadLiveFeeds();
+    } catch (err) {
+      setActionMessage(`Verification error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setVerificationSubmitting(false);
+      setTimeout(() => setActionMessage(null), 5000);
+    }
+  };
+
+  // 9. Quick Helper: Generate Suggested Volunteer ID
+  const suggestVolunteerId = (name: string) => {
+    const year = new Date().getFullYear();
+    const count = (verifiedCount + 1).toString().padStart(3, '0');
+    return `RN-VOL-${year}-${count}`;
+  };
+
   const unverified = incidents.filter((i) => i.status === 'unverified');
   const active = incidents.filter((i) => i.status !== 'unverified' && i.status !== 'rejected');
 
@@ -329,12 +391,8 @@ export default function CoordinatorConsolePage() {
     ? unverified
     : unverified.filter((i) => i.severity === severityFilter);
 
-  const filteredVolunteers = volunteers.filter((vol) => {
-    if (volunteerFilter === 'online') return vol.is_online;
-    if (volunteerFilter === 'available') return !vol.assigned_incident_id;
-    if (volunteerFilter === 'assigned') return Boolean(vol.assigned_incident_id);
-    return true;
-  });
+  const pendingVolunteers = volunteers.filter((vol) => vol.verification_status !== 'verified');
+  const verifiedVolunteers = volunteers.filter((vol) => vol.verification_status === 'verified');
 
   // ─────────────────────────────────────────────────────────────────────────────
   // VIEW A: AUTHENTICATION REQUIRED (Coordinator Login Screen)
@@ -564,9 +622,12 @@ export default function CoordinatorConsolePage() {
           <p className="text-[10px] text-slate-500 mt-0.5">Verified disaster relief missions</p>
         </div>
 
-        {/* Responders & Online Count */}
+        {/* Responders & Verification Calls */}
         <div
-          onClick={() => setActiveTab('volunteers')}
+          onClick={() => {
+            setActiveTab('volunteers');
+            setVolunteerRosterTab('pending');
+          }}
           className={`cursor-pointer rounded-xl p-4 border transition-all ${
             activeTab === 'volunteers'
               ? 'bg-blue-950/20 border-blue-500/50 shadow-lg shadow-blue-950/30'
@@ -574,15 +635,22 @@ export default function CoordinatorConsolePage() {
           }`}
         >
           <div className="flex items-center justify-between">
-            <p className="text-xs text-slate-400 font-medium">Field Responders</p>
-            <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              {onlineCount} Online
-            </span>
+            <p className="text-xs text-slate-400 font-medium">Volunteer Responders</p>
+            {pendingVerificationCount > 0 ? (
+              <span className="flex items-center gap-1 text-[10px] text-yellow-400 font-bold bg-yellow-950/80 px-1.5 py-0.5 rounded border border-yellow-800">
+                <PhoneCall className="h-3 w-3 animate-bounce" />
+                {pendingVerificationCount} Needs Call
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {onlineCount} Online
+              </span>
+            )}
           </div>
           <p className="text-2xl font-bold text-blue-400 mt-1">{volunteers.length}</p>
           <p className="text-[10px] text-slate-500 mt-0.5">
-            {assignedCount} Deployed &bull; {availableCount} Standby
+            {verifiedCount} Verified IDs &bull; {pendingVerificationCount} Awaiting Call
           </p>
         </div>
 
@@ -632,9 +700,9 @@ export default function CoordinatorConsolePage() {
         >
           <Users className="h-4 w-4" />
           Volunteer Roster ({volunteers.length})
-          {onlineCount > 0 && (
-            <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
-              {onlineCount} online
+          {pendingVerificationCount > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 text-[10px] font-bold">
+              {pendingVerificationCount} Needs Verification Call
             </span>
           )}
         </button>
@@ -861,194 +929,354 @@ export default function CoordinatorConsolePage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────────────
-          TAB 3: REGISTERED RESPONDERS & JOB ASSIGNMENTS (COORDINATOR ONLY)
+          TAB 3: VOLUNTEER ROSTER & MANUAL ID VERIFICATION WORKFLOW
       ────────────────────────────────────────────────────────────────────────── */}
       {activeTab === 'volunteers' && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <Users className="h-5 w-5 text-blue-400" />
-                  Volunteer Command Roster ({volunteers.length})
+                  Volunteer Management &amp; Identity Issuance
                 </h2>
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-800 text-[11px] text-emerald-400 font-bold">
+                <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-800 text-[11px] text-emerald-400 font-bold">
                   <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                   {onlineCount} Online Now
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Government ID verified responders. Only Coordinators &amp; Admins can assign emergency tasks.
+                Review applicant Aadhaar credentials, conduct phone verification, and manually issue official Volunteer IDs.
               </p>
             </div>
 
-            {/* Volunteer Filter Buttons */}
-            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 text-xs">
+            {/* Sub-toggle: Pending Call Review vs Approved Responders */}
+            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-1 text-xs">
               <button
-                onClick={() => setVolunteerFilter('all')}
-                className={`px-3 py-1 rounded-md text-[11px] font-medium transition-colors ${
-                  volunteerFilter === 'all'
+                onClick={() => setVolunteerRosterTab('pending')}
+                className={`px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5 ${
+                  volunteerRosterTab === 'pending'
+                    ? 'bg-yellow-500 text-slate-950 font-bold shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <PhoneCall className="h-3.5 w-3.5" />
+                Phone Verification Queue ({pendingVolunteers.length})
+              </button>
+
+              <button
+                onClick={() => setVolunteerRosterTab('verified')}
+                className={`px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5 ${
+                  volunteerRosterTab === 'verified'
+                    ? 'bg-emerald-600 text-white font-bold shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <IdCard className="h-3.5 w-3.5" />
+                Verified Responders ({verifiedVolunteers.length})
+              </button>
+
+              <button
+                onClick={() => setVolunteerRosterTab('all')}
+                className={`px-3 py-1.5 rounded-md font-semibold transition-all ${
+                  volunteerRosterTab === 'all'
                     ? 'bg-slate-700 text-white font-bold'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
                 All ({volunteers.length})
               </button>
-              <button
-                onClick={() => setVolunteerFilter('online')}
-                className={`px-3 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1 ${
-                  volunteerFilter === 'online'
-                    ? 'bg-emerald-900/60 text-emerald-300 font-bold border border-emerald-700'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Online ({onlineCount})
-              </button>
-              <button
-                onClick={() => setVolunteerFilter('available')}
-                className={`px-3 py-1 rounded-md text-[11px] font-medium transition-colors ${
-                  volunteerFilter === 'available'
-                    ? 'bg-blue-900/60 text-blue-300 font-bold border border-blue-700'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Standby ({availableCount})
-              </button>
-              <button
-                onClick={() => setVolunteerFilter('assigned')}
-                className={`px-3 py-1 rounded-md text-[11px] font-medium transition-colors ${
-                  volunteerFilter === 'assigned'
-                    ? 'bg-orange-900/60 text-orange-300 font-bold border border-orange-700'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Deployed ({assignedCount})
-              </button>
             </div>
           </div>
 
-          {filteredVolunteers.length === 0 ? (
-            <div className="p-12 text-center border border-slate-800 rounded-2xl bg-slate-900/40 text-slate-400 text-xs">
-              <Users className="h-10 w-10 text-slate-600 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-200">No Responders Found</p>
-              <p className="mt-1">No volunteers match the selected filter.</p>
+          {/* ── QUEUE 1: PENDING PHONE CALL & MANUAL ID ASSIGNMENT ── */}
+          {volunteerRosterTab === 'pending' && (
+            <div className="space-y-4">
+              <div className="p-3.5 bg-yellow-950/30 border border-yellow-800/60 rounded-xl text-xs text-yellow-300 flex items-start gap-2.5">
+                <PhoneCall className="h-4 w-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong className="text-yellow-200">Coordinator Verification Protocol:</strong> When citizens submit their registration, their full details (Name, 12-digit Aadhaar, and Address) appear in this queue. Call each volunteer on their registered mobile number, confirm their details &amp; willingness, and click <strong>&quot;Verify by Phone &amp; Issue ID&quot;</strong> to manually grant their official Volunteer ID.
+                </div>
+              </div>
+
+              {pendingVolunteers.length === 0 ? (
+                <div className="p-12 text-center border border-slate-800 rounded-2xl bg-slate-900/40 text-slate-400 text-xs">
+                  <CheckCircle className="h-10 w-10 text-emerald-500/80 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-slate-200">Phone Verification Queue Clear</p>
+                  <p className="mt-1">All registered volunteers have been interviewed and issued official IDs.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {pendingVolunteers.map((vol) => (
+                    <Card key={vol.id} className="border-yellow-900/40 bg-slate-900/90 shadow-xl hover:border-yellow-700/60 transition-all">
+                      <CardBody className="space-y-3.5 text-xs">
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-2.5">
+                          <div>
+                            <h3 className="font-bold text-white text-base">{vol.name}</h3>
+                            <p className="text-slate-400 text-[11px] mt-0.5">
+                              {vol.organization || 'Community Responder Applicant'}
+                            </p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded bg-yellow-950 border border-yellow-700 text-yellow-300 text-[10px] font-bold flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            Awaiting Interview
+                          </span>
+                        </div>
+
+                        {/* Full Details Received from Registration */}
+                        <div className="space-y-1.5 text-slate-300 bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+                          {/* Direct Phone Call Button */}
+                          <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
+                            <span className="text-slate-400 text-[11px] flex items-center gap-1.5">
+                              <Phone className="h-3.5 w-3.5 text-yellow-400" />
+                              <strong>Registered Phone:</strong> +91 {vol.phone}
+                            </span>
+                            <a
+                              href={`tel:+91${vol.phone}`}
+                              className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] inline-flex items-center gap-1 shadow-sm"
+                            >
+                              <PhoneCall className="h-3 w-3" />
+                              Call Now
+                            </a>
+                          </div>
+
+                          <p className="flex items-center gap-1.5 pt-1">
+                            <Mail className="h-3.5 w-3.5 text-slate-400" />
+                            <strong>Email Address:</strong> {vol.email}
+                          </p>
+
+                          {vol.aadhar_number && (
+                            <p className="flex items-center gap-1.5 text-orange-300 font-mono text-[11px]">
+                              <Shield className="h-3.5 w-3.5 text-orange-400" />
+                              <strong>Aadhaar Card:</strong> {vol.aadhar_number.replace(/(\d{4})/g, '$1 ').trim()}
+                            </p>
+                          )}
+
+                          {vol.address && (
+                            <p className="flex items-start gap-1.5 text-slate-300 text-[11px]">
+                              <MapPin className="h-3.5 w-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
+                              <span><strong>Residential Address:</strong> {vol.address}</span>
+                            </p>
+                          )}
+
+                          <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+                            <strong>Availability:</strong> {vol.availability}
+                          </p>
+                        </div>
+
+                        {/* Skills */}
+                        <div>
+                          <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">
+                            Offered Relief Capabilities:
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {vol.skills?.map((s) => (
+                              <span key={s} className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] text-slate-300 font-medium">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Coordinator Action Buttons */}
+                        <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => {
+                              setVerifyingVolunteer(vol);
+                              setManualVolunteerId(suggestVolunteerId(vol.name));
+                            }}
+                            className="flex-1 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold text-xs py-2 shadow-sm"
+                          >
+                            <IdCard className="h-3.5 w-3.5 mr-1" />
+                            Verify by Phone &amp; Issue ID
+                          </Button>
+                        </div>
+                      </CardBody>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredVolunteers.map((vol) => (
-                <Card key={vol.id} className="border-slate-800 bg-slate-900/80 hover:border-slate-700 transition-colors">
-                  <CardBody className="space-y-3 text-xs">
-                    {/* Header: Name + Online Status + Aadhaar Badge */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-white text-sm">{vol.name}</h4>
-                          {vol.is_online ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-950/80 border border-emerald-700 text-emerald-400">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              ONLINE NOW
+          )}
+
+          {/* ── QUEUE 2: VERIFIED RESPONDERS WITH OFFICIAL IDs ── */}
+          {volunteerRosterTab === 'verified' && (
+            <div className="space-y-4">
+              {verifiedVolunteers.length === 0 ? (
+                <div className="p-12 text-center border border-slate-800 rounded-2xl bg-slate-900/40 text-slate-400 text-xs">
+                  <IdCard className="h-10 w-10 text-slate-600 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-slate-200">No Verified Responders Yet</p>
+                  <p className="mt-1">Review applicant registrations from the Phone Verification Queue and issue Volunteer IDs.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {verifiedVolunteers.map((vol) => (
+                    <Card key={vol.id} className="border-slate-800 bg-slate-900/80 hover:border-slate-700 transition-colors">
+                      <CardBody className="space-y-3 text-xs">
+                        {/* Header: Name + Volunteer ID Pill + Online status */}
+                        <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-white text-sm">{vol.name}</h4>
+                              {vol.is_online ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-950/80 border border-emerald-700 text-emerald-400">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  ONLINE
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-800 text-slate-400">
+                                  STANDBY
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-slate-400 text-[11px] mt-0.5">{vol.organization || 'Registered Responder'}</p>
+                          </div>
+
+                          {/* Official Issued Volunteer ID Badge */}
+                          <div className="text-right">
+                            <span className="px-2 py-0.5 rounded bg-blue-950/80 border border-blue-700 text-blue-300 font-mono font-bold text-[10px] block">
+                              {vol.volunteer_id_code}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-800 text-slate-400">
-                              STANDBY
+                            <span className="text-[9px] text-emerald-400 font-semibold block mt-0.5">
+                              ✓ Phone Verified
                             </span>
+                          </div>
+                        </div>
+
+                        {/* Contact & Address */}
+                        <div className="space-y-1 text-slate-300 text-[11px] bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+                          <p className="flex items-center gap-1.5">
+                            <Phone className="h-3.5 w-3.5 text-slate-400" />
+                            +91 {vol.phone}
+                          </p>
+                          <p className="flex items-center gap-1.5">
+                            <Mail className="h-3.5 w-3.5 text-slate-400" />
+                            {vol.email}
+                          </p>
+                          {vol.address && (
+                            <p className="flex items-center gap-1.5 text-slate-400">
+                              <MapPin className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                              <span className="truncate">{vol.address}</span>
+                            </p>
                           )}
                         </div>
-                        <p className="text-slate-400 text-[11px] mt-0.5">{vol.organization || 'Independent Responder'}</p>
-                      </div>
-                      <span className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-400 text-[10px] font-semibold whitespace-nowrap">
-                        Aadhaar Verified
-                      </span>
-                    </div>
 
-                    {/* Contact & Address */}
-                    <div className="space-y-1 text-slate-300 text-[11px] bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+                        {/* Capabilities */}
+                        <div>
+                          <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">
+                            Capabilities:
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {vol.skills?.map((s) => (
+                              <span key={s} className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 font-medium">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Deployed Mission OR Assign Job Button */}
+                        {vol.assigned_incident ? (
+                          <div className="p-2.5 rounded-lg bg-orange-950/30 border border-orange-900/60 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wide flex items-center gap-1">
+                                <Activity className="h-3 w-3" /> Deployed Mission
+                              </span>
+                              <span className="font-mono text-[10px] text-orange-300 font-bold">
+                                {vol.assigned_incident.reference_code}
+                              </span>
+                            </div>
+                            <p className="text-white font-semibold text-xs truncate">
+                              {vol.assigned_incident.title}
+                            </p>
+                            <p className="text-slate-400 text-[10px] flex items-center gap-1">
+                              <MapPin className="h-3 w-3 text-orange-400" />
+                              {vol.assigned_incident.location_name}
+                            </p>
+                            {vol.assigned_role_task && (
+                              <p className="text-slate-300 text-[10px] italic border-t border-orange-900/40 pt-1">
+                                Orders: &ldquo;{vol.assigned_role_task}&rdquo;
+                              </p>
+                            )}
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={() => handleUnassignVolunteer(vol.id, vol.name)}
+                              className="w-full mt-2 text-[11px] py-1 bg-red-950/60 hover:bg-red-900/80 border border-red-800 text-red-200"
+                            >
+                              <UserMinus className="h-3.5 w-3.5 mr-1" />
+                              Relieve / Complete Mission
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
+                              <Check className="h-3.5 w-3.5" /> Ready for Deployment
+                            </span>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => {
+                                setAssigningVolunteer(vol);
+                                if (active.length > 0) {
+                                  setSelectedIncidentId(active[0].id);
+                                }
+                              }}
+                              className="text-xs bg-blue-600 hover:bg-blue-500 gap-1 py-1"
+                            >
+                              <Send className="h-3 w-3" />
+                              Assign Job
+                            </Button>
+                          </div>
+                        )}
+                      </CardBody>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── QUEUE 3: ALL VOLUNTEERS COMBINED ── */}
+          {volunteerRosterTab === 'all' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {volunteers.map((vol) => (
+                <Card key={vol.id} className="border-slate-800 bg-slate-900/80">
+                  <CardBody className="space-y-2.5 text-xs">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h4 className="font-bold text-white text-sm">{vol.name}</h4>
+                        <p className="text-slate-400 text-[11px]">{vol.organization || 'Independent Responder'}</p>
+                      </div>
+                      {vol.verification_status === 'verified' ? (
+                        <span className="px-2 py-0.5 rounded bg-blue-950/80 border border-blue-700 text-blue-300 font-mono font-bold text-[10px]">
+                          {vol.volunteer_id_code}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-yellow-950/80 border border-yellow-700 text-yellow-300 text-[10px] font-bold">
+                          Interview Pending
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-1 text-slate-300 text-[11px] bg-slate-950/60 p-2 rounded border border-slate-800">
                       <p className="flex items-center gap-1.5">
-                        <Phone className="h-3.5 w-3.5 text-slate-400" />
+                        <Phone className="h-3 w-3 text-slate-400" />
                         +91 {vol.phone}
                       </p>
                       <p className="flex items-center gap-1.5">
-                        <Mail className="h-3.5 w-3.5 text-slate-400" />
+                        <Mail className="h-3 w-3 text-slate-400" />
                         {vol.email}
                       </p>
                       {vol.address && (
                         <p className="flex items-center gap-1.5 text-slate-400">
-                          <MapPin className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                          <MapPin className="h-3 w-3 text-slate-400 flex-shrink-0" />
                           <span className="truncate">{vol.address}</span>
                         </p>
                       )}
                     </div>
-
-                    {/* Capabilities */}
-                    <div>
-                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">
-                        Relief Capabilities:
-                      </p>
-                      <div className="flex flex-wrap gap-1">
-                        {vol.skills?.map((s) => (
-                          <span key={s} className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 font-medium">
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Real Assigned Mission Details (if deployed) */}
-                    {vol.assigned_incident ? (
-                      <div className="p-2.5 rounded-lg bg-orange-950/30 border border-orange-900/60 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wide flex items-center gap-1">
-                            <Activity className="h-3 w-3" /> Deployed Mission
-                          </span>
-                          <span className="font-mono text-[10px] text-orange-300 font-bold">
-                            {vol.assigned_incident.reference_code}
-                          </span>
-                        </div>
-                        <p className="text-white font-semibold text-xs truncate">
-                          {vol.assigned_incident.title}
-                        </p>
-                        <p className="text-slate-400 text-[10px] flex items-center gap-1">
-                          <MapPin className="h-3 w-3 text-orange-400" />
-                          {vol.assigned_incident.location_name}
-                        </p>
-                        {vol.assigned_role_task && (
-                          <p className="text-slate-300 text-[10px] italic border-t border-orange-900/40 pt-1">
-                            Orders: &ldquo;{vol.assigned_role_task}&rdquo;
-                          </p>
-                        )}
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => handleUnassignVolunteer(vol.id, vol.name)}
-                          className="w-full mt-2 text-[11px] py-1 bg-red-950/60 hover:bg-red-900/80 border border-red-800 text-red-200"
-                        >
-                          <UserMinus className="h-3.5 w-3.5 mr-1" />
-                          Relieve / Complete Mission
-                        </Button>
-                      </div>
-                    ) : (
-                      /* Standby State + Coordinator Assign Button */
-                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
-                          <Check className="h-3.5 w-3.5" /> Ready for Deployment
-                        </span>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => {
-                            setAssigningVolunteer(vol);
-                            if (active.length > 0) {
-                              setSelectedIncidentId(active[0].id);
-                            }
-                          }}
-                          className="text-xs bg-blue-600 hover:bg-blue-500 gap-1 py-1"
-                        >
-                          <Send className="h-3 w-3" />
-                          Assign Job
-                        </Button>
-                      </div>
-                    )}
                   </CardBody>
                 </Card>
               ))}
@@ -1058,7 +1286,134 @@ export default function CoordinatorConsolePage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────────────
-          ASSIGNMENT MODAL (COORDINATOR ONLY)
+          MODAL 1: PHONE INTERVIEW & MANUAL VOLUNTEER ID ISSUANCE
+      ────────────────────────────────────────────────────────────────────────── */}
+      {verifyingVolunteer && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <PhoneCall className="h-5 w-5 text-yellow-400" />
+                  Phone Verification &amp; ID Issuance
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Applicant: <strong className="text-white">{verifyingVolunteer.name}</strong> &bull; Phone: <strong className="text-white">+91 {verifyingVolunteer.phone}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVerifyingVolunteer(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleVerifyAndIssueId} className="space-y-4 text-xs">
+              {/* Candidate Info Summary */}
+              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Aadhaar Card:</span>
+                  <strong className="text-orange-300 font-mono">{verifyingVolunteer.aadhar_number || 'Provided in submission'}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Residential Address:</span>
+                  <span className="text-slate-200 text-right max-w-xs truncate">{verifyingVolunteer.address}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Capabilities:</span>
+                  <span className="text-slate-200">{verifyingVolunteer.skills?.join(', ')}</span>
+                </div>
+              </div>
+
+              {/* Phone Call Checklist */}
+              <div className="p-3 bg-blue-950/30 border border-blue-900/60 rounded-xl space-y-2">
+                <span className="font-semibold text-blue-300 uppercase tracking-wide text-[10px] flex items-center gap-1.5">
+                  <ClipboardCheck className="h-3.5 w-3.5 text-blue-400" />
+                  Interview Checklist
+                </span>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  Call <strong>+91 {verifyingVolunteer.phone}</strong> to confirm identity, confirm emergency response availability, and review their local area.
+                </p>
+                <a
+                  href={`tel:+91${verifyingVolunteer.phone}`}
+                  className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-bold hover:underline"
+                >
+                  <Phone className="h-3 w-3" /> Click here to dial +91 {verifyingVolunteer.phone}
+                </a>
+              </div>
+
+              {/* Manual Volunteer ID Input */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-200 font-bold">
+                    Official Volunteer ID to Issue *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setManualVolunteerId(suggestVolunteerId(verifyingVolunteer.name))}
+                    className="text-[11px] text-blue-400 hover:text-blue-300 inline-flex items-center gap-1"
+                  >
+                    <Sparkles className="h-3 w-3" /> Auto-Suggest Next ID
+                  </button>
+                </div>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500 font-mono font-bold">
+                    <IdCard className="h-4 w-4 text-blue-400" />
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={manualVolunteerId}
+                    onChange={(e) => setManualVolunteerId(e.target.value.toUpperCase())}
+                    placeholder="e.g. RN-VOL-2026-001 or VOL-HYD-101"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 pl-9 pr-3 py-2.5 text-xs text-white font-mono font-bold tracking-wider placeholder-slate-600 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  You can type any custom format (e.g. RN-VOL-2026-001) that matches your local organization badge numbering.
+                </p>
+              </div>
+
+              {/* Verification Notes */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Phone Interview Notes (Recorded in Database)
+                </label>
+                <textarea
+                  value={verificationInterviewNotes}
+                  onChange={(e) => setVerificationInterviewNotes(e.target.value)}
+                  rows={2}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white text-xs focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={verificationSubmitting || !manualVolunteerId.trim()}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-xs py-2 font-bold"
+                >
+                  {verificationSubmitting ? 'Issuing ID…' : `Confirm & Issue ${manualVolunteerId || 'Volunteer ID'}`}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setVerifyingVolunteer(null)}
+                  className="text-xs py-2 text-slate-400"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────────────
+          MODAL 2: ASSIGNMENT MODAL (COORDINATOR ONLY)
       ────────────────────────────────────────────────────────────────────────── */}
       {assigningVolunteer && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
@@ -1070,7 +1425,7 @@ export default function CoordinatorConsolePage() {
                   Assign Emergency Mission
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Deploying <strong className="text-white">{assigningVolunteer.name}</strong> ({assigningVolunteer.phone})
+                  Deploying <strong className="text-white">{assigningVolunteer.name}</strong> ({assigningVolunteer.volunteer_id_code})
                 </p>
               </div>
               <button
@@ -1123,10 +1478,13 @@ export default function CoordinatorConsolePage() {
 
               <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 text-slate-400 text-[11px] space-y-1">
                 <p>
-                  <strong>Volunteer Capabilities:</strong> {assigningVolunteer.skills?.join(', ') || 'General Relief'}
+                  <strong>Volunteer ID:</strong> {assigningVolunteer.volunteer_id_code}
                 </p>
                 <p>
-                  <strong>Real-time Update:</strong> This assignment immediately appears in the volunteer&apos;s portal upon login. No fake or placeholder data is used.
+                  <strong>Capabilities:</strong> {assigningVolunteer.skills?.join(', ') || 'General Relief'}
+                </p>
+                <p>
+                  <strong>Real-time Sync:</strong> This assignment updates immediately in the volunteer&apos;s portal with zero fake or placeholder data.
                 </p>
               </div>
 

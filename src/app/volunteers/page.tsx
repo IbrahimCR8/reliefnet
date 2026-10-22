@@ -22,7 +22,11 @@ import {
   LogOut,
   Activity,
   ArrowRight,
-  Radio
+  Radio,
+  IdCard,
+  PhoneCall,
+  Check,
+  FileCheck2
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -52,6 +56,8 @@ interface VolunteerItem {
   skills: string[];
   availability: string;
   is_online?: boolean;
+  verification_status?: string;
+  volunteer_id_code?: string | null;
   assigned_incident_id?: string | null;
   assigned_incident?: {
     id: string;
@@ -77,6 +83,9 @@ interface LoggedInVolunteer {
   name: string;
   email: string;
   phone?: string;
+  volunteer_id_code?: string | null;
+  verification_status?: 'verified' | 'pending_review' | 'rejected' | string;
+  verification_notes?: string | null;
   status: 'available' | 'deployed';
   mission?: RealMission | null;
 }
@@ -127,8 +136,8 @@ export default function VolunteersPage() {
     address: string;
   } | null>(null);
 
-  // Login Form State
-  const [loginEmail, setLoginEmail] = useState('');
+  // Login Form State (accepts Email OR Coordinator-issued Volunteer ID)
+  const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -231,13 +240,14 @@ export default function VolunteersPage() {
     }
   };
 
-  // ── Handle Volunteer Login (Email + Password) ──────────────────────────────
+  // ── Handle Volunteer Login (Email OR Volunteer ID + Password) ──────────────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
 
-    if (!loginEmail.includes('@')) {
-      setLoginError('Please enter a valid email address.');
+    const rawId = loginIdentifier.trim();
+    if (!rawId) {
+      setLoginError('Please enter your email address or coordinator-issued Volunteer ID.');
       return;
     }
     if (!loginPassword || loginPassword.length < 6) {
@@ -250,8 +260,23 @@ export default function VolunteersPage() {
     try {
       if (isSupabaseConfigured()) {
         const supabase = createClient();
+        let targetEmail = rawId;
+
+        // If the user entered a Volunteer ID instead of an email, resolve it
+        if (!rawId.includes('@')) {
+          const resolveRes = await fetch(`/api/volunteers/my-mission?identifier=${encodeURIComponent(rawId)}`);
+          const resolveData = await resolveRes.json().catch(() => ({}));
+          if (resolveData?.volunteer?.email) {
+            targetEmail = resolveData.volunteer.email;
+          } else {
+            setLoginError(`No active record found for Volunteer ID "${rawId}". Please check your ID code or sign in with your registered email.`);
+            setLoginLoading(false);
+            return;
+          }
+        }
+
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: loginEmail,
+          email: targetEmail,
           password: loginPassword,
         });
 
@@ -264,34 +289,32 @@ export default function VolunteersPage() {
         fetch('/api/volunteers/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: loginEmail, is_online: true }),
+          body: JSON.stringify({ email: targetEmail, is_online: true }),
         }).catch(() => {});
 
-        // 2. Fetch real mission assigned by coordinator
-        const missionRes = await fetch(`/api/volunteers/my-mission?email=${encodeURIComponent(loginEmail)}`);
+        // 2. Fetch real mission and verification status from API
+        const missionRes = await fetch(`/api/volunteers/my-mission?email=${encodeURIComponent(targetEmail)}`);
         const missionData = await missionRes.json().catch(() => ({}));
 
-        if (missionData && missionData.has_mission && missionData.mission) {
-          setVolunteerSession({
-            name: data.user?.user_metadata?.full_name || loginEmail.split('@')[0],
-            email: loginEmail,
-            status: 'deployed',
-            mission: missionData.mission,
-          });
-        } else {
-          setVolunteerSession({
-            name: data.user?.user_metadata?.full_name || loginEmail.split('@')[0],
-            email: loginEmail,
-            status: 'available',
-            mission: null,
-          });
-        }
+        const volProfile = missionData?.volunteer;
+
+        setVolunteerSession({
+          name: volProfile?.name || data.user?.user_metadata?.full_name || targetEmail.split('@')[0],
+          email: targetEmail,
+          phone: volProfile?.phone,
+          volunteer_id_code: volProfile?.volunteer_id_code || null,
+          verification_status: volProfile?.verification_status || 'pending_review',
+          verification_notes: volProfile?.verification_notes || null,
+          status: missionData?.has_mission && missionData?.mission ? 'deployed' : 'available',
+          mission: missionData?.has_mission ? missionData.mission : null,
+        });
+
         loadVolunteers();
       } else {
         setLoginError('Supabase authentication is not configured in .env.local.');
       }
     } catch {
-      setLoginError('Failed to sign in. Please verify your email and password.');
+      setLoginError('Failed to sign in. Please check your credentials and try again.');
     } finally {
       setLoginLoading(false);
     }
@@ -329,7 +352,7 @@ export default function VolunteersPage() {
             </h1>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Government ID (Aadhaar) registered responders mobilizing for disaster relief operations.
+            Government ID (Aadhaar) registered responders mobilizing for verified disaster relief operations.
           </p>
         </div>
 
@@ -368,7 +391,7 @@ export default function VolunteersPage() {
         <div className="lg:col-span-1">
           {activeTab === 'register' ? (
             /* ── REGISTER CARD ── */
-            <Card className="sticky top-20 border-slate-800 bg-slate-900/90">
+            <Card className="sticky top-20 border-slate-800 bg-slate-900/90 shadow-2xl">
               <CardHeader>
                 <CardTitle className="text-base flex items-center justify-between">
                   <span className="flex items-center gap-2">
@@ -392,8 +415,26 @@ export default function VolunteersPage() {
                         register successful will reach you soon
                       </h3>
                       <p className="text-xs text-emerald-400 font-medium mt-1">
-                        Recorded to Supabase Database
+                        Application recorded in Supabase Disaster Database
                       </p>
+                    </div>
+
+                    {/* Verification Notice: Phone Interview Required */}
+                    <div className="bg-amber-950/40 border border-amber-800/80 rounded-lg p-3 text-left space-y-2 text-xs">
+                      <div className="flex items-start gap-2">
+                        <PhoneCall className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <strong className="text-amber-300 block font-semibold">
+                            Next Step: Verification Phone Call
+                          </strong>
+                          <p className="text-amber-200/90 text-[11px] leading-relaxed mt-0.5">
+                            A Zonal Emergency Coordinator will review your submitted Aadhaar credentials and call your mobile number (+91 {lastSubmission?.phone}) to conduct a quick verification interview.
+                          </p>
+                          <p className="text-amber-200/90 text-[11px] leading-relaxed mt-1">
+                            Following the call, the coordinator will <strong className="text-white">manually issue your official Volunteer ID</strong>, granting you full deployment clearance.
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 text-left space-y-1.5 text-xs">
@@ -428,7 +469,7 @@ export default function VolunteersPage() {
                         className="w-full text-xs"
                         onClick={() => {
                           setActiveTab('login');
-                          setLoginEmail(lastSubmission?.email || '');
+                          setLoginIdentifier(lastSubmission?.email || '');
                         }}
                       >
                         Proceed to Volunteer Login
@@ -512,6 +553,9 @@ export default function VolunteersPage() {
                           onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, ''))}
                         />
                       </div>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Coordinator will call this number for your verification interview.
+                      </p>
                     </div>
 
                     {/* Aadhaar Card Number */}
@@ -623,7 +667,7 @@ export default function VolunteersPage() {
                     Volunteer Login
                   </span>
                   <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                    Email + Password
+                    Email / Volunteer ID
                   </span>
                 </CardTitle>
               </CardHeader>
@@ -631,17 +675,79 @@ export default function VolunteersPage() {
                 {volunteerSession ? (
                   /* Volunteer Dashboard when logged in */
                   <div className="space-y-4">
-                    <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-lg flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <CheckCircle className="h-5 w-5 text-emerald-400 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs font-bold text-white">{volunteerSession.name}</p>
-                          <p className="text-[11px] text-slate-300">{volunteerSession.email}</p>
+                    {/* Official Volunteer ID Card */}
+                    <div className="relative rounded-xl border border-blue-500/40 bg-gradient-to-br from-slate-900 via-slate-950 to-blue-950/40 p-4 shadow-xl">
+                      <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                            <IdCard className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-blue-400 tracking-wider uppercase block">
+                              ReliefNet Responder Pass
+                            </span>
+                            <h3 className="font-bold text-white text-base leading-tight">
+                              {volunteerSession.name}
+                            </h3>
+                          </div>
                         </div>
+
+                        {volunteerSession.volunteer_id_code ? (
+                          <div className="text-right">
+                            <span className="text-[9px] text-slate-400 uppercase tracking-widest block">Volunteer ID</span>
+                            <span className="font-mono text-xs font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-700/80">
+                              {volunteerSession.volunteer_id_code}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800 font-medium">
+                            Pending ID
+                          </span>
+                        )}
                       </div>
-                      <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        Online Now
+
+                      <div className="pt-3 grid grid-cols-2 gap-2 text-[11px]">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Contact Email</span>
+                          <span className="text-slate-200 font-medium truncate block">{volunteerSession.email}</span>
+                        </div>
+                        {volunteerSession.phone && (
+                          <div>
+                            <span className="text-slate-400 block text-[10px]">Mobile</span>
+                            <span className="text-slate-200 font-medium">+91 {volunteerSession.phone}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Verification Status Banner */}
+                      <div className="mt-3 pt-3 border-t border-slate-800/80">
+                        {volunteerSession.verification_status === 'verified' ? (
+                          <div className="flex items-center gap-2 text-emerald-400 text-xs">
+                            <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                            <span className="font-medium">
+                              Identity &amp; Interview Verified by Coordinator
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-2 bg-amber-950/40 p-2.5 rounded-lg border border-amber-800/60 text-amber-300 text-xs">
+                            <Clock className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="block font-semibold">Pending Coordinator Verification Call</strong>
+                              <p className="text-[10px] text-amber-200/80 mt-0.5 leading-relaxed">
+                                A coordinator will call your phone number to conduct a brief verification interview and grant your official Volunteer ID.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Online Presence Status */}
+                    <div className="p-2.5 bg-emerald-950/30 border border-emerald-800/50 rounded-lg flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Network Presence:</span>
+                      <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Online &amp; Active
                       </span>
                     </div>
 
@@ -719,7 +825,7 @@ export default function VolunteersPage() {
                     </Button>
                   </div>
                 ) : (
-                  /* Login with Email and Password */
+                  /* Login with Email OR Volunteer ID + Password */
                   <form onSubmit={handleLogin} className="space-y-4">
                     {loginError && (
                       <div className="p-3 bg-red-950/50 border border-red-800/80 rounded-lg text-xs text-red-300 flex items-start gap-2">
@@ -729,19 +835,25 @@ export default function VolunteersPage() {
                     )}
 
                     <div>
-                      <label htmlFor="log-email" className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
-                        <Mail className="h-3.5 w-3.5 text-slate-400" />
-                        Email Address
+                      <label htmlFor="log-identifier" className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Mail className="h-3.5 w-3.5 text-slate-400" />
+                          Email Address or Volunteer ID
+                        </span>
+                        <span className="text-[10px] text-blue-400">e.g. RN-VOL-2026-001</span>
                       </label>
                       <Input
-                        id="log-email"
-                        type="email"
+                        id="log-identifier"
+                        type="text"
                         required
-                        placeholder="volunteer@example.com"
-                        value={loginEmail}
-                        onChange={(e) => setLoginEmail(e.target.value)}
+                        placeholder="you@example.com or RN-VOL-XXXX"
+                        value={loginIdentifier}
+                        onChange={(e) => setLoginIdentifier(e.target.value)}
                         disabled={loginLoading}
                       />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Log in using your registered email or the Volunteer ID provided during your phone interview.
+                      </p>
                     </div>
 
                     <div>
@@ -822,7 +934,7 @@ export default function VolunteersPage() {
                   <CardBody className="space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-bold text-white text-base">{vol.name}</h3>
                           {vol.is_online ? (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-950/80 border border-emerald-700 text-emerald-400">
@@ -835,11 +947,29 @@ export default function VolunteersPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+
+                        {vol.volunteer_id_code ? (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="font-mono text-[10px] font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800">
+                              ID: {vol.volunteer_id_code}
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              • Verified Responder
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 mt-1">
+                            <Clock className="h-3 w-3" />
+                            Pending Phone Verification
+                          </span>
+                        )}
+
+                        <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
                           <Building className="h-3 w-3 text-slate-500" />
                           {vol.organization || 'Community Responder'}
                         </p>
                       </div>
+
                       <Badge
                         className={
                           vol.assigned_incident
@@ -865,7 +995,7 @@ export default function VolunteersPage() {
 
                     <div>
                       <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                        Verified Capabilities
+                        Relief Capabilities
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {vol.skills?.map((skill) => (
