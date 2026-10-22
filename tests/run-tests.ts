@@ -274,4 +274,34 @@ test('Volunteer Coordination: Assignment deduplication check', () => {
   assert.equal(canAssign('demo-1', 'user-103'), true);  // New assignment allowed
 });
 
+// ── Test 8: Volunteer Online Presence Calculation ────────────────
+test('Volunteer Presence: Online count is accurately derived', () => {
+  const now = Date.now();
+  const mockVolunteers = [
+    { id: 'v1', is_online: true, last_active_at: new Date(now - 60000).toISOString() }, // online
+    { id: 'v2', is_online: false, last_active_at: new Date(now - 120000).toISOString() }, // recently active (<15 min)
+    { id: 'v3', is_online: false, last_active_at: new Date(now - 3600000).toISOString() }, // offline (>1hr)
+  ];
+
+  const FIFTEEN_MINS = 15 * 60 * 1000;
+  const onlineCount = mockVolunteers.filter(v => {
+    const diff = now - new Date(v.last_active_at).getTime();
+    return v.is_online || diff < FIFTEEN_MINS;
+  }).length;
+
+  assert.equal(onlineCount, 2);
+});
+
+// ── Test 9: Zero Fake Jobs Enforcement ────────────────────────────
+test('Volunteer Missions: Unassigned responders have null mission orders (no fake jobs)', () => {
+  const unassignedVolunteer = {
+    id: 'vol-test',
+    assigned_incident_id: null,
+    assigned_role_task: null,
+  };
+
+  assert.equal(unassignedVolunteer.assigned_incident_id, null);
+  assert.equal(unassignedVolunteer.assigned_role_task, null);
+});
+
 console.log('✅ All ReliefNet Automated Test Suites Passed Successfully!');

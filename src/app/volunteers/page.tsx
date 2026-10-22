@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Users,
@@ -21,7 +21,8 @@ import {
   Home,
   LogOut,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Radio
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -29,13 +30,36 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
+interface RealMission {
+  incident_id: string;
+  reference_code: string;
+  title: string;
+  category: string;
+  severity: string;
+  location_name: string;
+  description: string;
+  assigned_role_task: string;
+  assigned_at?: string;
+  assigned_by_email?: string;
+}
+
 interface VolunteerItem {
   id: string;
   name: string;
+  email?: string;
+  phone?: string;
   organization: string;
   skills: string[];
   availability: string;
-  status: 'available' | 'deployed';
+  is_online?: boolean;
+  assigned_incident_id?: string | null;
+  assigned_incident?: {
+    id: string;
+    reference_code: string;
+    title: string;
+    location_name: string;
+    severity: string;
+  } | null;
 }
 
 const AVAILABLE_SKILLS = [
@@ -53,22 +77,29 @@ interface LoggedInVolunteer {
   name: string;
   email: string;
   phone?: string;
-  status: string;
+  status: 'available' | 'deployed';
+  mission?: RealMission | null;
 }
 
 export default function VolunteersPage() {
   const [volunteers, setVolunteers] = useState<VolunteerItem[]>([]);
+  const [onlineCount, setOnlineCount] = useState(0);
 
   // Fetch real registered volunteers on mount
-  React.useEffect(() => {
+  const loadVolunteers = () => {
     fetch('/api/volunteers')
       .then((res) => res.json())
       .then((data) => {
         if (data.volunteers && Array.isArray(data.volunteers)) {
           setVolunteers(data.volunteers);
+          setOnlineCount(data.online_count || 0);
         }
       })
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadVolunteers();
   }, []);
   
   // Navigation tab: 'register' | 'login'
@@ -177,17 +208,7 @@ export default function VolunteersPage() {
         return;
       }
 
-      // Add to local responder roster
-      const newVol: VolunteerItem = {
-        id: `vol-${Date.now()}`,
-        name: regName.trim(),
-        organization: regOrganization.trim() || 'Independent Responder',
-        skills: selectedSkills,
-        availability: regAvailability.trim(),
-        status: 'available',
-      };
-
-      setVolunteers([newVol, ...volunteers]);
+      loadVolunteers();
       setLastSubmission({
         name: regName.trim(),
         email: regEmail.trim(),
@@ -197,7 +218,6 @@ export default function VolunteersPage() {
       });
       setRegSubmitted(true);
     } catch {
-      // Local fallback
       setLastSubmission({
         name: regName.trim(),
         email: regEmail.trim(),
@@ -240,11 +260,33 @@ export default function VolunteersPage() {
           return;
         }
 
-        setVolunteerSession({
-          name: data.user?.user_metadata?.full_name || loginEmail.split('@')[0],
-          email: loginEmail,
-          status: 'Active Registered Responder',
-        });
+        // 1. Mark presence online
+        fetch('/api/volunteers/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: loginEmail, is_online: true }),
+        }).catch(() => {});
+
+        // 2. Fetch real mission assigned by coordinator
+        const missionRes = await fetch(`/api/volunteers/my-mission?email=${encodeURIComponent(loginEmail)}`);
+        const missionData = await missionRes.json().catch(() => ({}));
+
+        if (missionData && missionData.has_mission && missionData.mission) {
+          setVolunteerSession({
+            name: data.user?.user_metadata?.full_name || loginEmail.split('@')[0],
+            email: loginEmail,
+            status: 'deployed',
+            mission: missionData.mission,
+          });
+        } else {
+          setVolunteerSession({
+            name: data.user?.user_metadata?.full_name || loginEmail.split('@')[0],
+            email: loginEmail,
+            status: 'available',
+            mission: null,
+          });
+        }
+        loadVolunteers();
       } else {
         setLoginError('Supabase authentication is not configured in .env.local.');
       }
@@ -255,8 +297,29 @@ export default function VolunteersPage() {
     }
   };
 
+  // ── Handle Volunteer Sign Out ─────────────────────────────────────────────
+  const handleSignOut = () => {
+    if (volunteerSession?.email) {
+      fetch('/api/volunteers/presence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: volunteerSession.email, is_online: false }),
+      }).catch(() => {});
+    }
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        supabase.auth.signOut();
+      } catch {
+        // Ignored
+      }
+    }
+    setVolunteerSession(null);
+    loadVolunteers();
+  };
+
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
@@ -266,7 +329,7 @@ export default function VolunteersPage() {
             </h1>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Government ID (Aadhaar) registered responders mobilizing for disaster relief.
+            Government ID (Aadhaar) registered responders mobilizing for disaster relief operations.
           </p>
         </div>
 
@@ -351,31 +414,25 @@ export default function VolunteersPage() {
                       </div>
                       <div className="text-slate-400 flex justify-between">
                         <span>Aadhaar:</span>
-                        <strong className="text-orange-300 font-mono">•••• •••• {lastSubmission?.aadharLast4}</strong>
+                        <strong className="text-emerald-400 font-mono">XXXX-XXXX-{lastSubmission?.aadharLast4}</strong>
                       </div>
                       <div className="text-slate-400 flex justify-between">
                         <span>Address:</span>
-                        <span className="text-slate-300 truncate max-w-[150px]">{lastSubmission?.address}</span>
+                        <strong className="text-white truncate max-w-[140px]">{lastSubmission?.address}</strong>
                       </div>
                     </div>
 
-                    <p className="text-xs text-slate-400 leading-relaxed">
-                      Your full details have been submitted. Our disaster coordinator command will verify your credentials and reach out shortly.
-                    </p>
-
-                    <div className="space-y-2 pt-2">
+                    <div className="pt-2 space-y-2">
                       <Button
                         variant="primary"
-                        className="w-full gap-2 text-xs"
+                        className="w-full text-xs"
                         onClick={() => {
-                          setLoginEmail(lastSubmission?.email || '');
                           setActiveTab('login');
+                          setLoginEmail(lastSubmission?.email || '');
                         }}
                       >
-                        <LogIn className="h-4 w-4" />
-                        Go to Volunteer Login
+                        Proceed to Volunteer Login
                       </Button>
-                      
                       <Button
                         variant="outline"
                         size="sm"
@@ -388,7 +445,6 @@ export default function VolunteersPage() {
                           setRegAadhar('');
                           setRegAddress('');
                           setRegPassword('');
-                          setLastSubmission(null);
                         }}
                       >
                         Register Another Volunteer
@@ -408,28 +464,28 @@ export default function VolunteersPage() {
                     <div>
                       <label htmlFor="reg-name" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
                         <User className="h-3.5 w-3.5 text-slate-400" />
-                        Full Name *
+                        Full Legal Name *
                       </label>
                       <Input
                         id="reg-name"
                         required
-                        placeholder="e.g. Ramesh Varma"
+                        placeholder="e.g. Ramesh Kumar"
                         value={regName}
                         onChange={(e) => setRegName(e.target.value)}
                       />
                     </div>
 
-                    {/* Email ID */}
+                    {/* Email */}
                     <div>
                       <label htmlFor="reg-email" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
                         <Mail className="h-3.5 w-3.5 text-slate-400" />
-                        Email ID *
+                        Email Address *
                       </label>
                       <Input
                         id="reg-email"
                         type="email"
                         required
-                        placeholder="volunteer@example.com"
+                        placeholder="ramesh@example.com"
                         value={regEmail}
                         onChange={(e) => setRegEmail(e.target.value)}
                       />
@@ -439,10 +495,10 @@ export default function VolunteersPage() {
                     <div>
                       <label htmlFor="reg-phone" className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
                         <Phone className="h-3.5 w-3.5 text-slate-400" />
-                        Phone Number *
+                        Phone Number (+91) *
                       </label>
                       <div className="relative">
-                        <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-mono select-none">
+                        <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-xs text-slate-400 font-semibold pointer-events-none">
                           +91
                         </span>
                         <Input
@@ -575,32 +631,75 @@ export default function VolunteersPage() {
                 {volunteerSession ? (
                   /* Volunteer Dashboard when logged in */
                   <div className="space-y-4">
-                    <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-lg flex items-center gap-3">
-                      <CheckCircle className="h-5 w-5 text-emerald-400 flex-shrink-0" />
-                      <div>
-                        <p className="text-xs font-bold text-white">Signed In as Volunteer</p>
-                        <p className="text-[11px] text-slate-300">{volunteerSession.email}</p>
+                    <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-lg flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <CheckCircle className="h-5 w-5 text-emerald-400 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs font-bold text-white">{volunteerSession.name}</p>
+                          <p className="text-[11px] text-slate-300">{volunteerSession.email}</p>
+                        </div>
                       </div>
+                      <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        Online Now
+                      </span>
                     </div>
 
-                    <div className="border border-orange-500/30 bg-orange-950/20 rounded-xl p-3 text-xs space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-orange-400 uppercase tracking-wide flex items-center gap-1">
-                          <Activity className="h-3.5 w-3.5" />
-                          Field Deployment Station
-                        </span>
-                        <Badge className="bg-orange-500/20 text-orange-300 border-orange-500/30 text-[10px]">
-                          Active Mission
-                        </Badge>
+                    {/* Real Assigned Mission OR Clean Standby State */}
+                    {volunteerSession.mission ? (
+                      <div className="border border-orange-500/40 bg-orange-950/30 rounded-xl p-4 text-xs space-y-3 shadow-lg">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-orange-400 uppercase tracking-wide flex items-center gap-1.5 text-[11px]">
+                            <Activity className="h-4 w-4" />
+                            Official Mission Assignment
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-orange-900/60 text-orange-300 border border-orange-700 text-[10px] font-bold">
+                            {volunteerSession.mission.reference_code}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h4 className="font-bold text-white text-base">
+                            {volunteerSession.mission.title}
+                          </h4>
+                          <p className="text-slate-300 flex items-center gap-1 mt-1">
+                            <MapPin className="h-3.5 w-3.5 text-orange-400 flex-shrink-0" />
+                            {volunteerSession.mission.location_name}
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-900/90 p-3 rounded-lg border border-slate-800 space-y-1.5">
+                          <strong className="text-slate-200 block text-[11px] uppercase tracking-wider font-semibold">
+                            Coordinator Deployment Instructions:
+                          </strong>
+                          <p className="text-slate-300 text-xs leading-relaxed">
+                            {volunteerSession.mission.assigned_role_task}
+                          </p>
+                          {volunteerSession.mission.assigned_by_email && (
+                            <p className="text-[10px] text-slate-500 pt-1 border-t border-slate-800/80">
+                              Dispatched by: {volunteerSession.mission.assigned_by_email}
+                            </p>
+                          )}
+                        </div>
+
+                        <Link
+                          href={`/incidents/${volunteerSession.mission.incident_id}`}
+                          className="inline-flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 font-medium"
+                        >
+                          View Incident Briefing &rarr;
+                        </Link>
                       </div>
-                      <h4 className="font-bold text-white text-sm">
-                        Begumpet Zone 4 Emergency Triage
-                      </h4>
-                      <p className="text-slate-300 flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5 text-orange-400" />
-                        Hyderabad Disaster Operations Center
-                      </p>
-                    </div>
+                    ) : (
+                      <div className="border border-slate-800 bg-slate-950/60 rounded-xl p-5 text-center space-y-2">
+                        <div className="h-10 w-10 bg-slate-800/80 rounded-full flex items-center justify-center mx-auto text-blue-400">
+                          <Shield className="h-5 w-5" />
+                        </div>
+                        <h4 className="font-bold text-white text-sm">Ready on Standby</h4>
+                        <p className="text-slate-400 text-xs max-w-xs mx-auto leading-relaxed">
+                          No missions currently assigned. Only authorized coordinators and admins can assign relief tasks. Once deployed, your official orders will appear here in real time.
+                        </p>
+                      </div>
+                    )}
 
                     <Link href="/map" className="block w-full">
                       <Button variant="primary" className="w-full text-xs gap-1.5">
@@ -612,7 +711,7 @@ export default function VolunteersPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setVolunteerSession(null)}
+                      onClick={handleSignOut}
                       className="w-full text-xs text-slate-400 hover:text-white gap-1.5"
                     >
                       <LogOut className="h-3.5 w-3.5" />
@@ -692,8 +791,14 @@ export default function VolunteersPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Users className="h-5 w-5 text-blue-400" />
-              Active Registered Responders ({volunteers.length})
+              Registered Responders Roster ({volunteers.length})
             </h2>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-800 text-[11px] text-emerald-400 font-semibold">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                {onlineCount} Online Now
+              </span>
+            </div>
           </div>
 
           {volunteers.length === 0 ? (
@@ -717,29 +822,53 @@ export default function VolunteersPage() {
                   <CardBody className="space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h3 className="font-bold text-white text-base">{vol.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-white text-base">{vol.name}</h3>
+                          {vol.is_online ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-950/80 border border-emerald-700 text-emerald-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              ONLINE
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-800 text-slate-400">
+                              STANDBY
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                           <Building className="h-3 w-3 text-slate-500" />
-                          {vol.organization}
+                          {vol.organization || 'Community Responder'}
                         </p>
                       </div>
                       <Badge
                         className={
-                          vol.status === 'deployed'
-                            ? 'bg-orange-950/40 text-orange-400 border-orange-800'
-                            : 'bg-emerald-950/40 text-emerald-400 border-emerald-800'
+                          vol.assigned_incident
+                            ? 'bg-orange-950/40 text-orange-400 border-orange-800 text-[10px]'
+                            : 'bg-emerald-950/40 text-emerald-400 border-emerald-800 text-[10px]'
                         }
                       >
-                        {vol.status === 'deployed' ? 'Deployed on Mission' : 'Available on Call'}
+                        {vol.assigned_incident ? `Deployed: ${vol.assigned_incident.reference_code}` : 'Available on Call'}
                       </Badge>
                     </div>
+
+                    {vol.assigned_incident && (
+                      <div className="p-2 rounded bg-orange-950/20 border border-orange-900/50 text-[11px] space-y-0.5">
+                        <p className="font-semibold text-orange-300 truncate">
+                          {vol.assigned_incident.title}
+                        </p>
+                        <p className="text-slate-400 flex items-center gap-1 text-[10px]">
+                          <MapPin className="h-3 w-3 text-orange-400" />
+                          {vol.assigned_incident.location_name}
+                        </p>
+                      </div>
+                    )}
 
                     <div>
                       <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
                         Verified Capabilities
                       </p>
                       <div className="flex flex-wrap gap-1.5">
-                        {vol.skills.map((skill) => (
+                        {vol.skills?.map((skill) => (
                           <span
                             key={skill}
                             className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[11px] text-slate-300 font-medium"

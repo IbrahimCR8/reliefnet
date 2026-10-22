@@ -21,16 +21,24 @@ import { Input } from '@/components/ui/Input';
 import { ReliefNetLogo } from '@/components/ui/Logo';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
+interface RealMission {
+  incident_id: string;
+  reference_code: string;
+  title: string;
+  category: string;
+  severity: string;
+  location_name: string;
+  description: string;
+  assigned_role_task: string;
+  assigned_at?: string;
+  assigned_by_email?: string;
+}
+
 interface VolunteerSession {
   name: string;
   email: string;
   status: 'available' | 'deployed';
-  assignedMission?: {
-    title: string;
-    location: string;
-    priority: string;
-    instructions: string;
-  };
+  mission?: RealMission | null;
 }
 
 export default function VolunteerLoginPage() {
@@ -71,11 +79,32 @@ export default function VolunteerLoginPage() {
           return;
         }
 
-        setSession({
-          name: data.user?.user_metadata?.full_name || email.split('@')[0],
-          email,
-          status: 'available',
-        });
+        // 1. Mark presence online
+        fetch('/api/volunteers/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, is_online: true }),
+        }).catch(() => {});
+
+        // 2. Fetch real mission assigned by coordinator
+        const missionRes = await fetch(`/api/volunteers/my-mission?email=${encodeURIComponent(email)}`);
+        const missionData = await missionRes.json().catch(() => ({}));
+
+        if (missionData && missionData.has_mission && missionData.mission) {
+          setSession({
+            name: data.user?.user_metadata?.full_name || email.split('@')[0],
+            email,
+            status: 'deployed',
+            mission: missionData.mission,
+          });
+        } else {
+          setSession({
+            name: data.user?.user_metadata?.full_name || email.split('@')[0],
+            email,
+            status: 'available',
+            mission: null,
+          });
+        }
       } else {
         setError('Supabase authentication is not configured in .env.local.');
       }
@@ -87,6 +116,21 @@ export default function VolunteerLoginPage() {
   };
 
   const handleSignOut = () => {
+    if (session?.email) {
+      fetch('/api/volunteers/presence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: session.email, is_online: false }),
+      }).catch(() => {});
+    }
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        supabase.auth.signOut();
+      } catch {
+        // Ignored
+      }
+    }
     setSession(null);
     setEmail('');
     setPassword('');
@@ -121,9 +165,10 @@ export default function VolunteerLoginPage() {
                   </CardTitle>
                   <p className="text-xs text-slate-400 mt-0.5">{session.email}</p>
                 </div>
-                <Badge className="bg-emerald-950/60 text-emerald-400 border-emerald-800">
-                  Government ID Verified
-                </Badge>
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800 text-[11px] text-emerald-400 font-semibold">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Online Now
+                </span>
               </div>
             </CardHeader>
             <CardBody className="space-y-6 pt-5">
@@ -131,38 +176,67 @@ export default function VolunteerLoginPage() {
               <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 text-xs space-y-1.5">
                 <div className="flex justify-between text-slate-400">
                   <span>Responder Status:</span>
-                  <span className="text-emerald-400 font-semibold uppercase tracking-wider">
-                    {session.status === 'deployed' ? 'Active Field Deployment' : 'Ready on Standby'}
+                  <span className={`font-semibold uppercase tracking-wider ${
+                    session.mission ? 'text-orange-400' : 'text-emerald-400'
+                  }`}>
+                    {session.mission ? 'Active Field Deployment' : 'Ready on Standby'}
                   </span>
                 </div>
               </div>
 
-              {/* Assigned Mission */}
-              {session.assignedMission && (
+              {/* Real Assigned Mission OR Clean Standby State */}
+              {session.mission ? (
                 <div className="border border-orange-500/30 bg-orange-950/20 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-orange-400 flex items-center gap-1.5 uppercase tracking-wide">
                       <Activity className="h-4 w-4" />
-                      Assigned Mission
+                      Official Mission Assignment
                     </span>
-                    <Badge className="bg-orange-500/20 text-orange-300 border-orange-500/30">
-                      {session.assignedMission.priority}
-                    </Badge>
+                    <span className="px-2 py-0.5 rounded bg-orange-900/60 text-orange-300 border border-orange-700 text-[10px] font-bold">
+                      {session.mission.reference_code}
+                    </span>
                   </div>
 
-                  <h3 className="text-base font-bold text-white">
-                    {session.assignedMission.title}
-                  </h3>
+                  <div>
+                    <h3 className="text-base font-bold text-white">
+                      {session.mission.title}
+                    </h3>
+                    <p className="text-xs text-slate-300 flex items-center gap-1 mt-1">
+                      <MapPin className="h-3.5 w-3.5 text-orange-400 flex-shrink-0" />
+                      {session.mission.location_name}
+                    </p>
+                  </div>
 
-                  <p className="text-xs text-slate-300 flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-orange-400 flex-shrink-0" />
-                    {session.assignedMission.location}
+                  <div className="bg-slate-900/90 p-3 rounded-lg text-xs text-slate-300 border border-slate-800 space-y-1.5">
+                    <strong className="text-slate-200 block text-[11px] uppercase tracking-wider font-semibold">
+                      Coordinator Deployment Instructions:
+                    </strong>
+                    <p className="leading-relaxed">
+                      {session.mission.assigned_role_task}
+                    </p>
+                    {session.mission.assigned_by_email && (
+                      <p className="text-[10px] text-slate-500 pt-1 border-t border-slate-800">
+                        Dispatched by: {session.mission.assigned_by_email}
+                      </p>
+                    )}
+                  </div>
+
+                  <Link
+                    href={`/incidents/${session.mission.incident_id}`}
+                    className="inline-flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 font-medium"
+                  >
+                    View Incident Details &rarr;
+                  </Link>
+                </div>
+              ) : (
+                <div className="border border-slate-800 bg-slate-950/60 rounded-xl p-6 text-center space-y-2">
+                  <div className="h-10 w-10 bg-slate-800/80 rounded-full flex items-center justify-center mx-auto text-blue-400">
+                    <Shield className="h-5 w-5" />
+                  </div>
+                  <h4 className="font-bold text-white text-sm">Ready on Standby</h4>
+                  <p className="text-slate-400 text-xs max-w-sm mx-auto leading-relaxed">
+                    No missions currently assigned. Only verified coordinators and admins can assign relief tasks to volunteers. Once assigned, your real mission briefing will appear here in real time.
                   </p>
-
-                  <div className="bg-slate-900/80 p-2.5 rounded text-xs text-slate-400 border border-slate-800">
-                    <strong className="text-slate-300 block mb-1">Coordinator Dispatch Instructions:</strong>
-                    {session.assignedMission.instructions}
-                  </div>
                 </div>
               )}
 

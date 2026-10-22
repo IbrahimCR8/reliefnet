@@ -26,7 +26,11 @@ import {
   Database,
   KeyRound,
   FileCheck2,
-  ChevronRight
+  ChevronRight,
+  Radio,
+  Send,
+  UserMinus,
+  Check
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -35,6 +39,15 @@ import { SeverityBadge, StatusBadge } from '@/components/ui/Badge';
 import { CATEGORY_ICONS, CATEGORY_LABELS, formatDate } from '@/lib/utils';
 import type { Incident, IncidentStatus } from '@/types';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+
+interface AssignedIncidentSummary {
+  id: string;
+  reference_code: string;
+  title: string;
+  location_name: string;
+  severity: string;
+  category: string;
+}
 
 interface VolunteerSummary {
   id: string;
@@ -47,6 +60,12 @@ interface VolunteerSummary {
   availability: string;
   organization?: string;
   verification_status: string;
+  is_online?: boolean;
+  assigned_incident_id?: string | null;
+  assigned_role_task?: string | null;
+  assigned_at?: string | null;
+  assigned_by_email?: string | null;
+  assigned_incident?: AssignedIncidentSummary | null;
 }
 
 export default function CoordinatorConsolePage() {
@@ -66,12 +85,23 @@ export default function CoordinatorConsolePage() {
   // Live Console Data
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [volunteers, setVolunteers] = useState<VolunteerSummary[]>([]);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [availableCount, setAvailableCount] = useState(0);
+  const [assignedCount, setAssignedCount] = useState(0);
+
   const [loadingFeeds, setLoadingFeeds] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   
   // Navigation inside Console: 'triage' | 'active' | 'volunteers' | 'setup_guide'
   const [activeTab, setActiveTab] = useState<'triage' | 'active' | 'volunteers' | 'setup_guide'>('triage');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
+  const [volunteerFilter, setVolunteerFilter] = useState<'all' | 'online' | 'available' | 'assigned'>('all');
+
+  // Assignment Modal State
+  const [assigningVolunteer, setAssigningVolunteer] = useState<VolunteerSummary | null>(null);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string>('');
+  const [taskInstructions, setTaskInstructions] = useState<string>('Disaster Relief Ground Operations & Triage Support');
+  const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
 
   const supabaseReady = isSupabaseConfigured();
 
@@ -99,7 +129,6 @@ export default function CoordinatorConsolePage() {
         setAuthChecking(false);
       }
     } else {
-      // Offline / Demo Mode: start logged out so user can see coordinator login flow
       setCoordinatorUser(null);
       setAuthChecking(false);
     }
@@ -122,6 +151,9 @@ export default function CoordinatorConsolePage() {
       }
       if (volData.volunteers && Array.isArray(volData.volunteers)) {
         setVolunteers(volData.volunteers);
+        setOnlineCount(volData.online_count || 0);
+        setAvailableCount(volData.available_count || 0);
+        setAssignedCount(volData.assigned_count || 0);
       }
     } catch {
       // Keep current state gracefully
@@ -199,7 +231,7 @@ export default function CoordinatorConsolePage() {
     setCoordinatorUser(null);
   };
 
-  // 6. Handle Database Status Update via PATCH
+  // 5. Handle Database Status Update via PATCH
   const handleUpdateStatus = async (id: string, newStatus: IncidentStatus) => {
     try {
       const res = await fetch(`/api/incidents/${id}`, {
@@ -229,12 +261,80 @@ export default function CoordinatorConsolePage() {
     }, 4000);
   };
 
+  // 6. Handle Coordinator Job Assignment to Volunteer
+  const handleAssignMission = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assigningVolunteer || !selectedIncidentId) return;
+
+    setAssignmentSubmitting(true);
+    try {
+      const res = await fetch('/api/volunteers/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          volunteer_id: assigningVolunteer.id,
+          incident_id: selectedIncidentId,
+          role_task: taskInstructions,
+          action: 'assign',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to assign mission');
+      }
+
+      setActionMessage(`Assigned ${assigningVolunteer.name} to disaster incident.`);
+      setAssigningVolunteer(null);
+      setSelectedIncidentId('');
+      loadLiveFeeds();
+    } catch (err) {
+      setActionMessage(`Assignment error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setAssignmentSubmitting(false);
+      setTimeout(() => setActionMessage(null), 4000);
+    }
+  };
+
+  // 7. Handle Relieve / Unassign Volunteer
+  const handleUnassignVolunteer = async (volunteerId: string, volunteerName: string) => {
+    try {
+      const res = await fetch('/api/volunteers/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          volunteer_id: volunteerId,
+          action: 'unassign',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to relieve volunteer');
+      }
+
+      setActionMessage(`Relieved ${volunteerName} from mission. Status reset to Available.`);
+      loadLiveFeeds();
+    } catch (err) {
+      setActionMessage(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setTimeout(() => setActionMessage(null), 4000);
+    }
+  };
+
   const unverified = incidents.filter((i) => i.status === 'unverified');
   const active = incidents.filter((i) => i.status !== 'unverified' && i.status !== 'rejected');
 
   const filteredUnverified = severityFilter === 'all'
     ? unverified
     : unverified.filter((i) => i.severity === severityFilter);
+
+  const filteredVolunteers = volunteers.filter((vol) => {
+    if (volunteerFilter === 'online') return vol.is_online;
+    if (volunteerFilter === 'available') return !vol.assigned_incident_id;
+    if (volunteerFilter === 'assigned') return Boolean(vol.assigned_incident_id);
+    return true;
+  });
 
   // ─────────────────────────────────────────────────────────────────────────────
   // VIEW A: AUTHENTICATION REQUIRED (Coordinator Login Screen)
@@ -262,7 +362,7 @@ export default function CoordinatorConsolePage() {
             <div>
               <span className="font-semibold text-white">Strict Role Restriction:</span>
               <p className="text-slate-400 text-[11px] mt-0.5 leading-relaxed">
-                ReliefNet maintains a ceiling of <strong>3 authorized coordinators</strong>. Public registration is closed. Accounts must be provisioned directly by Admin in Supabase.
+                ReliefNet maintains a ceiling of <strong>3 authorized coordinators/admins</strong>. Public registration is closed. Accounts are provisioned directly by Admin in Supabase.
               </p>
             </div>
           </div>
@@ -352,7 +452,7 @@ export default function CoordinatorConsolePage() {
             <p className="text-[11px] leading-relaxed">
               1. Open your <strong>Supabase Dashboard &rarr; Authentication &rarr; Users</strong>.<br />
               2. Click <strong>Add User &rarr; Create User</strong> with your coordinator email and password.<br />
-              3. Toggle <strong>"Auto Confirm User" ON</strong> so email confirmation is bypassed.<br />
+              3. Toggle <strong>&quot;Auto Confirm User&quot; ON</strong> so email confirmation is bypassed.<br />
               4. In Table Editor &rarr; <code>profiles</code> table, set <code>role = &apos;coordinator&apos;</code> or <code>&apos;admin&apos;</code>.
             </p>
           </div>
@@ -436,6 +536,7 @@ export default function CoordinatorConsolePage() {
 
       {/* KPI Triage Metrics Bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Pending Citizen Reports */}
         <div
           onClick={() => setActiveTab('triage')}
           className={`cursor-pointer rounded-xl p-4 border transition-all ${
@@ -446,9 +547,10 @@ export default function CoordinatorConsolePage() {
         >
           <p className="text-xs text-slate-400 font-medium">Pending Citizen Reports</p>
           <p className="text-2xl font-bold text-yellow-400 mt-1">{unverified.length}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Awaiting authenticity verification</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Awaiting triage &amp; verification</p>
         </div>
 
+        {/* Active Operations */}
         <div
           onClick={() => setActiveTab('active')}
           className={`cursor-pointer rounded-xl p-4 border transition-all ${
@@ -459,9 +561,10 @@ export default function CoordinatorConsolePage() {
         >
           <p className="text-xs text-slate-400 font-medium">Active Operations</p>
           <p className="text-2xl font-bold text-orange-400 mt-1">{active.length}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Verified &amp; active field missions</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Verified disaster relief missions</p>
         </div>
 
+        {/* Responders & Online Count */}
         <div
           onClick={() => setActiveTab('volunteers')}
           className={`cursor-pointer rounded-xl p-4 border transition-all ${
@@ -470,17 +573,26 @@ export default function CoordinatorConsolePage() {
               : 'bg-slate-900 border-slate-800 hover:border-slate-700'
           }`}
         >
-          <p className="text-xs text-slate-400 font-medium">Mobilized Responders</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-400 font-medium">Field Responders</p>
+            <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              {onlineCount} Online
+            </span>
+          </div>
           <p className="text-2xl font-bold text-blue-400 mt-1">{volunteers.length}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Aadhaar verified personnel</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">
+            {assignedCount} Deployed &bull; {availableCount} Standby
+          </p>
         </div>
 
+        {/* Resolved Missions */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
           <p className="text-xs text-slate-400 font-medium">Resolved Missions</p>
           <p className="text-2xl font-bold text-emerald-400 mt-1">
             {incidents.filter((i) => i.status === 'resolved').length}
           </p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Completed relief deployments</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Completed rescue operations</p>
         </div>
       </div>
 
@@ -519,7 +631,12 @@ export default function CoordinatorConsolePage() {
           }`}
         >
           <Users className="h-4 w-4" />
-          Registered Responders ({volunteers.length})
+          Volunteer Roster ({volunteers.length})
+          {onlineCount > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+              {onlineCount} online
+            </span>
+          )}
         </button>
 
         <button
@@ -744,48 +861,108 @@ export default function CoordinatorConsolePage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────────────
-          TAB 3: REGISTERED RESPONDERS ROSTER
+          TAB 3: REGISTERED RESPONDERS & JOB ASSIGNMENTS (COORDINATOR ONLY)
       ────────────────────────────────────────────────────────────────────────── */}
       {activeTab === 'volunteers' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Users className="h-5 w-5 text-blue-400" />
-                Government ID Verified Responders ({volunteers.length})
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Users className="h-5 w-5 text-blue-400" />
+                  Volunteer Command Roster ({volunteers.length})
+                </h2>
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-800 text-[11px] text-emerald-400 font-bold">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  {onlineCount} Online Now
+                </span>
+              </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Personnel registered via the Volunteer Hub with 12-digit Aadhaar credentials.
+                Government ID verified responders. Only Coordinators &amp; Admins can assign emergency tasks.
               </p>
             </div>
-            <Link href="/volunteers">
-              <Button variant="outline" size="sm" className="text-xs">
-                Open Volunteer Hub
-              </Button>
-            </Link>
+
+            {/* Volunteer Filter Buttons */}
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 text-xs">
+              <button
+                onClick={() => setVolunteerFilter('all')}
+                className={`px-3 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  volunteerFilter === 'all'
+                    ? 'bg-slate-700 text-white font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                All ({volunteers.length})
+              </button>
+              <button
+                onClick={() => setVolunteerFilter('online')}
+                className={`px-3 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1 ${
+                  volunteerFilter === 'online'
+                    ? 'bg-emerald-900/60 text-emerald-300 font-bold border border-emerald-700'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                Online ({onlineCount})
+              </button>
+              <button
+                onClick={() => setVolunteerFilter('available')}
+                className={`px-3 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  volunteerFilter === 'available'
+                    ? 'bg-blue-900/60 text-blue-300 font-bold border border-blue-700'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Standby ({availableCount})
+              </button>
+              <button
+                onClick={() => setVolunteerFilter('assigned')}
+                className={`px-3 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  volunteerFilter === 'assigned'
+                    ? 'bg-orange-900/60 text-orange-300 font-bold border border-orange-700'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Deployed ({assignedCount})
+              </button>
+            </div>
           </div>
 
-          {volunteers.length === 0 ? (
+          {filteredVolunteers.length === 0 ? (
             <div className="p-12 text-center border border-slate-800 rounded-2xl bg-slate-900/40 text-slate-400 text-xs">
               <Users className="h-10 w-10 text-slate-600 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-200">No Registered Volunteers Yet</p>
-              <p className="mt-1">Direct community responders to the Volunteers tab to register with Aadhaar ID.</p>
+              <p className="text-sm font-semibold text-slate-200">No Responders Found</p>
+              <p className="mt-1">No volunteers match the selected filter.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {volunteers.map((vol) => (
-                <Card key={vol.id} className="border-slate-800 bg-slate-900/80">
-                  <CardBody className="space-y-2.5 text-xs">
-                    <div className="flex items-start justify-between">
+              {filteredVolunteers.map((vol) => (
+                <Card key={vol.id} className="border-slate-800 bg-slate-900/80 hover:border-slate-700 transition-colors">
+                  <CardBody className="space-y-3 text-xs">
+                    {/* Header: Name + Online Status + Aadhaar Badge */}
+                    <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h4 className="font-bold text-white text-sm">{vol.name}</h4>
-                        <p className="text-slate-400 text-[11px]">{vol.organization || 'Independent Responder'}</p>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-white text-sm">{vol.name}</h4>
+                          {vol.is_online ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-950/80 border border-emerald-700 text-emerald-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              ONLINE NOW
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-800 text-slate-400">
+                              STANDBY
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-slate-400 text-[11px] mt-0.5">{vol.organization || 'Independent Responder'}</p>
                       </div>
-                      <span className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-400 text-[10px] font-semibold">
+                      <span className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-400 text-[10px] font-semibold whitespace-nowrap">
                         Aadhaar Verified
                       </span>
                     </div>
 
+                    {/* Contact & Address */}
                     <div className="space-y-1 text-slate-300 text-[11px] bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
                       <p className="flex items-center gap-1.5">
                         <Phone className="h-3.5 w-3.5 text-slate-400" />
@@ -803,23 +980,176 @@ export default function CoordinatorConsolePage() {
                       )}
                     </div>
 
+                    {/* Capabilities */}
                     <div>
                       <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">
                         Relief Capabilities:
                       </p>
                       <div className="flex flex-wrap gap-1">
                         {vol.skills?.map((s) => (
-                          <span key={s} className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300">
+                          <span key={s} className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 font-medium">
                             {s}
                           </span>
                         ))}
                       </div>
                     </div>
+
+                    {/* Real Assigned Mission Details (if deployed) */}
+                    {vol.assigned_incident ? (
+                      <div className="p-2.5 rounded-lg bg-orange-950/30 border border-orange-900/60 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wide flex items-center gap-1">
+                            <Activity className="h-3 w-3" /> Deployed Mission
+                          </span>
+                          <span className="font-mono text-[10px] text-orange-300 font-bold">
+                            {vol.assigned_incident.reference_code}
+                          </span>
+                        </div>
+                        <p className="text-white font-semibold text-xs truncate">
+                          {vol.assigned_incident.title}
+                        </p>
+                        <p className="text-slate-400 text-[10px] flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-orange-400" />
+                          {vol.assigned_incident.location_name}
+                        </p>
+                        {vol.assigned_role_task && (
+                          <p className="text-slate-300 text-[10px] italic border-t border-orange-900/40 pt-1">
+                            Orders: &ldquo;{vol.assigned_role_task}&rdquo;
+                          </p>
+                        )}
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleUnassignVolunteer(vol.id, vol.name)}
+                          className="w-full mt-2 text-[11px] py-1 bg-red-950/60 hover:bg-red-900/80 border border-red-800 text-red-200"
+                        >
+                          <UserMinus className="h-3.5 w-3.5 mr-1" />
+                          Relieve / Complete Mission
+                        </Button>
+                      </div>
+                    ) : (
+                      /* Standby State + Coordinator Assign Button */
+                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
+                          <Check className="h-3.5 w-3.5" /> Ready for Deployment
+                        </span>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            setAssigningVolunteer(vol);
+                            if (active.length > 0) {
+                              setSelectedIncidentId(active[0].id);
+                            }
+                          }}
+                          className="text-xs bg-blue-600 hover:bg-blue-500 gap-1 py-1"
+                        >
+                          <Send className="h-3 w-3" />
+                          Assign Job
+                        </Button>
+                      </div>
+                    )}
                   </CardBody>
                 </Card>
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────────────
+          ASSIGNMENT MODAL (COORDINATOR ONLY)
+      ────────────────────────────────────────────────────────────────────────── */}
+      {assigningVolunteer && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-blue-400" />
+                  Assign Emergency Mission
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Deploying <strong className="text-white">{assigningVolunteer.name}</strong> ({assigningVolunteer.phone})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAssigningVolunteer(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAssignMission} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Target Disaster Incident (from Real Database) *
+                </label>
+                {active.length === 0 ? (
+                  <div className="p-3 rounded-lg bg-yellow-950/40 border border-yellow-800 text-yellow-300 text-xs">
+                    No active or verified disaster operations available. Verify citizen emergency reports first.
+                  </div>
+                ) : (
+                  <select
+                    value={selectedIncidentId}
+                    onChange={(e) => setSelectedIncidentId(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white text-xs focus:border-blue-500 focus:outline-none"
+                  >
+                    {active.map((inc) => (
+                      <option key={inc.id} value={inc.id}>
+                        [{inc.reference_code}] {inc.title} — {inc.location_name} ({inc.severity.toUpperCase()})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Coordinator Instructions &amp; Role Task *
+                </label>
+                <textarea
+                  value={taskInstructions}
+                  onChange={(e) => setTaskInstructions(e.target.value)}
+                  required
+                  rows={3}
+                  placeholder="e.g. Lead medical triage and first aid distribution at relief camp #2"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2.5 text-white text-xs focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 text-slate-400 text-[11px] space-y-1">
+                <p>
+                  <strong>Volunteer Capabilities:</strong> {assigningVolunteer.skills?.join(', ') || 'General Relief'}
+                </p>
+                <p>
+                  <strong>Real-time Update:</strong> This assignment immediately appears in the volunteer&apos;s portal upon login. No fake or placeholder data is used.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={assignmentSubmitting || active.length === 0}
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-xs py-2"
+                >
+                  {assignmentSubmitting ? 'Dispatching…' : 'Deploy Responder to Incident'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAssigningVolunteer(null)}
+                  className="text-xs py-2 text-slate-400"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
