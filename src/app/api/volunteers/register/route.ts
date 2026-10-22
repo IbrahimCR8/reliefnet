@@ -15,8 +15,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const aadharLast4 = parsed.data.aadhar.slice(-4);
-
     if (!isSupabaseConfigured()) {
       return NextResponse.json(
         { error: 'Database is not configured. Add Supabase keys to .env.local.' },
@@ -31,46 +29,58 @@ export async function POST(request: NextRequest) {
     // If password provided, register Supabase auth user so they can login with email & password
     let userId: string | null = null;
     if (parsed.data.password) {
-      const { data: authData } = await supabase.auth.signUp({
-        email: parsed.data.email,
-        password: parsed.data.password,
-        options: {
-          data: {
-            full_name: parsed.data.name,
-            role: 'volunteer',
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: parsed.data.email,
+          password: parsed.data.password,
+          options: {
+            data: {
+              full_name: parsed.data.name,
+              role: 'volunteer',
+            },
           },
-        },
-      });
-      userId = authData.user?.id || null;
+        });
+        if (!authError && authData.user?.id) {
+          userId = authData.user.id;
+        }
+      } catch (authException) {
+        console.warn('Volunteer auth signup notice:', authException);
+      }
     }
 
     // Persist full details to volunteer_profiles table in Supabase
+    const newRecord = {
+      user_id: userId,
+      name: parsed.data.name,
+      email: parsed.data.email,
+      phone: parsed.data.phone,
+      aadhar_number: parsed.data.aadhar,
+      address: parsed.data.address,
+      skills: parsed.data.skills,
+      availability: parsed.data.availability,
+      organization: parsed.data.organization || null,
+      verification_status: 'pending_review',
+      is_active: true,
+    };
+
     const { data, error } = await supabase
       .from('volunteer_profiles')
-      .insert({
-        user_id: userId,
-        name: parsed.data.name,
-        email: parsed.data.email,
-        phone: parsed.data.phone,
-        aadhar_number: parsed.data.aadhar,
-        address: parsed.data.address,
-        skills: parsed.data.skills,
-        availability: parsed.data.availability,
-        organization: parsed.data.organization || null,
-        verification_status: 'pending_review',
-        is_active: true,
-      })
+      .insert(newRecord)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      // If select failed due to an RLS policy, attempt insert without select
+      const retry = await supabase.from('volunteer_profiles').insert(newRecord);
+      if (retry.error) {
+        return NextResponse.json({ error: retry.error.message }, { status: 500 });
+      }
     }
 
     return NextResponse.json({
       success: true,
       message: 'register successful will reach you soon',
-      profile: data,
+      profile: data || newRecord,
     });
   } catch (err) {
     return NextResponse.json(
