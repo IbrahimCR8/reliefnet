@@ -19,8 +19,26 @@ export async function POST(request: NextRequest) {
       ? await createServiceClient()
       : await createClient();
 
-    // Get current coordinator session
-    const { data: { user } } = await supabase.auth.getUser();
+    // Verify caller has coordinator or admin role
+    const authClient = await createClient();
+    const { data: { user } } = await authClient.auth.getUser();
+
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      const callerRole = profile?.role || user.app_metadata?.role || user.user_metadata?.role;
+      if (callerRole && callerRole !== 'coordinator' && callerRole !== 'admin') {
+        return NextResponse.json(
+          { error: 'Forbidden: Volunteers are not authorized to verify other volunteers or issue IDs.' },
+          { status: 403 }
+        );
+      }
+    }
+
     const coordinatorEmail = user?.email || 'coordinator@reliefnet.org';
 
     if (action === 'reject') {

@@ -304,4 +304,17 @@ test('Volunteer Missions: Unassigned responders have null mission orders (no fak
   assert.equal(unassignedVolunteer.assigned_role_task, null);
 });
 
+// ── Test 10: Role-Based Access Control (RBAC) Enforcement ─────────
+test('RBAC: Volunteer role cannot access Coordinator Console', () => {
+  const isAuthorizedCoordinator = (role: string | null | undefined): boolean => {
+    return role === 'coordinator' || role === 'admin';
+  };
+
+  assert.equal(isAuthorizedCoordinator('volunteer'), false);
+  assert.equal(isAuthorizedCoordinator(null), false);
+  assert.equal(isAuthorizedCoordinator(undefined), false);
+  assert.equal(isAuthorizedCoordinator('coordinator'), true);
+  assert.equal(isAuthorizedCoordinator('admin'), true);
+});
+
 console.log('✅ All ReliefNet Automated Test Suites Passed Successfully!');

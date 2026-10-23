@@ -18,14 +18,23 @@ export default function LoginPage() {
 
   const supabaseReady = isSupabaseConfigured();
 
-  // If already logged in, redirect directly to coordinator console
+  // If already logged in, redirect directly to coordinator console only if coordinator or admin
   useEffect(() => {
     if (supabaseReady) {
       try {
         const supabase = createClient();
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        supabase.auth.getSession().then(async ({ data: { session } }) => {
           if (session?.user) {
-            router.push('/coordinator');
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', session.user.id)
+              .maybeSingle();
+
+            const role = profile?.role || session.user.app_metadata?.role || session.user.user_metadata?.role;
+            if (role === 'coordinator' || role === 'admin') {
+              router.push('/coordinator');
+            }
           }
         });
       } catch {
@@ -43,7 +52,7 @@ export default function LoginPage() {
 
     try {
       const supabase = createClient();
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -57,6 +66,24 @@ export default function LoginPage() {
           setError(authError.message);
         }
         return;
+      }
+
+      if (data?.user) {
+        // Strict RBAC Verification: Volunteers cannot log in as Coordinator
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', data.user.id)
+          .maybeSingle();
+
+        const role = profile?.role || data.user.app_metadata?.role || data.user.user_metadata?.role || 'volunteer';
+        if (role !== 'coordinator' && role !== 'admin') {
+          await supabase.auth.signOut();
+          setError(
+            `Access Denied: This account (${data.user.email}) is registered as a "Volunteer". Only authorized Zonal Coordinators and Admins can log in here. Please log in at the Volunteer Portal at /volunteers.`
+          );
+          return;
+        }
       }
 
       router.push('/coordinator');
@@ -119,14 +146,14 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-1.5">
-                Email address
+                Coordinator Email Address
               </label>
               <Input
                 id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="coordinator@example.com"
+                placeholder="coordinator@reliefnet.org"
                 required
                 disabled={loading || !supabaseReady}
                 autoComplete="email"
@@ -155,14 +182,22 @@ export default function LoginPage() {
               className="w-full"
               variant="primary"
             >
-              {loading ? 'Signing in…' : 'Sign In'}
+              {loading ? 'Signing in…' : 'Sign In as Coordinator'}
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-sm">
-            <Link href="/" className="text-slate-500 hover:text-slate-300 transition-colors inline-block">
-              ← Back to homepage
-            </Link>
+          <div className="mt-6 text-center text-sm space-y-2 border-t border-slate-800 pt-3">
+            <p className="text-slate-400 text-xs">
+              Are you a volunteer?{' '}
+              <Link href="/volunteers" className="text-orange-400 hover:text-orange-300 underline underline-offset-2">
+                Volunteer Portal Login
+              </Link>
+            </p>
+            <div>
+              <Link href="/" className="text-slate-500 hover:text-slate-300 transition-colors text-xs inline-block">
+                ← Back to homepage
+              </Link>
+            </div>
           </div>
         </div>
       </div>
