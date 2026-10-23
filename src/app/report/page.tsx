@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { generateReferenceCode } from '@/lib/utils';
 import { PhotoUpload } from '@/components/incidents/PhotoUpload';
+import { LocationSearchInput } from '@/components/location/LocationSearchInput';
 
 const CATEGORY_OPTIONS = [
   { value: 'flood', label: 'Flood' },
@@ -52,6 +53,12 @@ export default function ReportPage() {
       category: 'flood',
     },
   });
+
+  useEffect(() => {
+    register('location_name');
+    register('latitude');
+    register('longitude');
+  }, [register]);
 
   const handlePhotoUploadComplete = (result: { public_id: string; secure_url: string }) => {
     setUploadedMedia(result);
@@ -197,41 +204,20 @@ export default function ReportPage() {
           />
         </div>
 
-        {/* Location Name */}
-        <Input
-          label="Location Name / Landmark"
+        {/* User-friendly Location Input (Auto-geocoded in background, no manual lat/lon) */}
+        <LocationSearchInput
+          label="Location, Address, Area, or Landmark"
           id="location_name"
           required
-          placeholder="e.g. Near St. Mary Church, Ward 12, River Bridge Road"
+          placeholder="e.g. Velachery, Chennai, Government Hospital Tambaram, or 600042"
           error={errors.location_name?.message}
-          {...register('location_name')}
           disabled={submitting}
+          onLocationSelect={(loc) => {
+            setValue('location_name', loc.location_name, { shouldValidate: true });
+            setValue('latitude', loc.latitude);
+            setValue('longitude', loc.longitude);
+          }}
         />
-
-        {/* Lat / Long */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input
-            label="Latitude (Optional)"
-            id="latitude"
-            type="number"
-            step="any"
-            placeholder="e.g. 17.3850"
-            error={errors.latitude?.message}
-            {...register('latitude', { valueAsNumber: true })}
-            disabled={submitting}
-          />
-
-          <Input
-            label="Longitude (Optional)"
-            id="longitude"
-            type="number"
-            step="any"
-            placeholder="e.g. 78.4867"
-            error={errors.longitude?.message}
-            {...register('longitude', { valueAsNumber: true })}
-            disabled={submitting}
-          />
-        </div>
 
         {/* People Affected */}
         <Input

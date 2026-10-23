@@ -83,7 +83,7 @@ export default function CoordinatorConsolePage() {
 
   // Authentication State
   const [coordinatorUser, setCoordinatorUser] = useState<{ email: string; role: string } | null>(null);
-  const [authChecking, setAuthChecking] = useState(true);
+  const [authChecking, setAuthChecking] = useState(() => isSupabaseConfigured());
 
   // Login Form State
   const [loginEmail, setLoginEmail] = useState('');
@@ -125,44 +125,41 @@ export default function CoordinatorConsolePage() {
 
   // 1. Check Existing Supabase Session on Mount
   useEffect(() => {
-    if (supabaseReady) {
+    if (!supabaseReady) return;
+
+    const checkAuth = async () => {
       try {
         const supabase = createClient();
-        supabase.auth.getUser().then(async ({ data: { user }, error }) => {
-          if (user && !error) {
-            // Verify role via secure backend API (bypasses RLS recursion)
-            const roleRes = await fetch('/api/auth/verify-role', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: user.email, userId: user.id }),
-            });
-            const roleData = await roleRes.json().catch(() => ({}));
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (user && !error) {
+          // Verify role via secure backend API (bypasses RLS recursion)
+          const roleRes = await fetch('/api/auth/verify-role', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: user.email, userId: user.id }),
+          });
+          const roleData = await roleRes.json().catch(() => ({}));
 
-            if (roleData?.isCoordinator) {
-              setCoordinatorUser({
-                email: user.email || 'coordinator@reliefnet.org',
-                role: roleData.role === 'admin' ? 'System Administrator / Commander' : 'Incident Commander / Zonal Coordinator',
-              });
-            } else {
-              // Active session is a volunteer account - deny access to command terminal
-              setCoordinatorUser(null);
-            }
+          if (roleData?.isCoordinator) {
+            setCoordinatorUser({
+              email: user.email || 'coordinator@reliefnet.org',
+              role: roleData.role === 'admin' ? 'System Administrator / Commander' : 'Incident Commander / Zonal Coordinator',
+            });
           } else {
+            // Active session is a volunteer account - deny access to command terminal
             setCoordinatorUser(null);
           }
-          setAuthChecking(false);
-        }).catch(() => {
+        } else {
           setCoordinatorUser(null);
-          setAuthChecking(false);
-        });
+        }
       } catch {
         setCoordinatorUser(null);
+      } finally {
         setAuthChecking(false);
       }
-    } else {
-      setCoordinatorUser(null);
-      setAuthChecking(false);
-    }
+    };
+
+    void checkAuth();
   }, [supabaseReady]);
 
   // 2. Fetch Live Incidents and Volunteers
@@ -197,7 +194,10 @@ export default function CoordinatorConsolePage() {
 
   useEffect(() => {
     if (coordinatorUser) {
-      loadLiveFeeds();
+      const timer = setTimeout(() => {
+        void loadLiveFeeds();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [coordinatorUser]);
 

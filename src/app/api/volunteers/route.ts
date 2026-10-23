@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
       .map((v) => v.assigned_incident_id)
       .filter(Boolean) as string[];
 
-    let incidentMap: Record<string, { id: string; reference_code: string; title: string; location_name: string; severity: string; category: string }> = {};
+    const incidentMap: Record<string, { id: string; reference_code: string; title: string; location_name: string; severity: string; category: string }> = {};
 
     if (assignedIncidentIds.length > 0) {
       const { data: incData } = await supabase

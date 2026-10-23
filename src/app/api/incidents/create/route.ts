@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { reportIncidentSchema } from '@/lib/validations';
 import { generateReferenceCode } from '@/lib/utils';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
+import { forwardGeocode } from '@/lib/geocoding';
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,6 +40,23 @@ export async function POST(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
+    let resolvedLat = data.latitude ?? null;
+    let resolvedLon = data.longitude ?? null;
+
+    // Background Geocoding: If coordinates are missing or not provided by client,
+    // automatically find coordinates in background from the location_name
+    if (resolvedLat === null || resolvedLon === null) {
+      try {
+        const geoResults = await forwardGeocode(data.location_name, 1);
+        if (geoResults && geoResults.length > 0) {
+          resolvedLat = geoResults[0].latitude;
+          resolvedLon = geoResults[0].longitude;
+        }
+      } catch (geoErr) {
+        console.warn('[incidents/create] Automatic background geocoding failed:', geoErr);
+      }
+    }
+
     const { data: incident, error: insertError } = await supabase
       .from('incidents')
       .insert({
@@ -48,8 +66,8 @@ export async function POST(request: NextRequest) {
         description: data.description,
         severity: data.severity,
         location_name: data.location_name,
-        latitude: data.latitude ?? null,
-        longitude: data.longitude ?? null,
+        latitude: resolvedLat,
+        longitude: resolvedLon,
         people_affected: data.people_affected ?? null,
         assistance_requested: data.assistance_requested ?? null,
         status: 'unverified',

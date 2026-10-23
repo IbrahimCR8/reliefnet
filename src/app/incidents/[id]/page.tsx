@@ -237,13 +237,23 @@ export default function IncidentDetailPage({ params }: PageProps) {
 
               <div>
                 <span className="text-slate-500 block uppercase tracking-wider font-semibold mb-0.5">
-                  Geospatial Coordinates
+                  Location Status
                 </span>
-                <span className="font-mono text-slate-300">
-                  {incident.latitude !== null && incident.longitude !== null
-                    ? `${incident.latitude.toFixed(4)}, ${incident.longitude.toFixed(4)}`
-                    : 'Coordinates not provided'}
-                </span>
+                {incident.latitude !== null && incident.longitude !== null ? (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
+                      ✓ Mapped on Satellite Grid
+                    </span>
+                    <Link
+                      href="/map"
+                      className="text-xs text-orange-400 hover:text-orange-300 underline font-medium"
+                    >
+                      View on Map →
+                    </Link>
+                  </div>
+                ) : (
+                  <span className="text-slate-400 text-xs">Awaiting coordinate resolution</span>
+                )}
               </div>
 
               <div>

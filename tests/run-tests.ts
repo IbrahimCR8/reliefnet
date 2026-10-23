@@ -11,12 +11,13 @@ import {
 import {
   generateReferenceCode,
   validateImageFile,
+  calculateDistanceKm,
+  formatDistance,
   CATEGORY_LABELS,
   SEVERITY_LABELS,
   STATUS_LABELS,
-  ALLOWED_IMAGE_TYPES,
-  MAX_FILE_SIZE_BYTES,
 } from '../src/lib/utils';
+import { forwardGeocode, reverseGeocode } from '../src/lib/geocoding';
 import {
   DEMO_INCIDENTS,
   DEMO_STATS,
@@ -325,6 +326,89 @@ test('RBAC: Admin and Coordinator roles cannot access Volunteer Portal', () => {
   assert.equal(isAuthorizedVolunteer('admin'), false);
   assert.equal(isAuthorizedVolunteer('coordinator'), false);
   assert.equal(isAuthorizedVolunteer('volunteer'), true);
+});
+
+// ── Test 11: Geocoding & Location Resolution Tests ─────────────────
+test('Geocoding: Forward geocode resolves normal place names (Velachery, Chennai)', async () => {
+  const results = await forwardGeocode('Velachery, Chennai', 3);
+  assert.ok(results.length > 0, 'Should return matching results for Velachery');
+  const top = results[0];
+  assert.ok(top.latitude > 12.0 && top.latitude < 14.0, 'Latitude should be in Chennai area');
+  assert.ok(top.longitude > 79.5 && top.longitude < 81.0, 'Longitude should be in Chennai area');
+  assert.ok(top.display_name.toLowerCase().includes('velachery') || top.display_name.toLowerCase().includes('chennai'));
+});
+
+test('Geocoding: Forward geocode resolves landmark (Government Hospital, Tambaram)', async () => {
+  const results = await forwardGeocode('Government Hospital, Tambaram', 3);
+  assert.ok(results.length > 0, 'Should return matching results for Tambaram');
+  const top = results[0];
+  assert.ok(top.latitude > 12.0 && top.latitude < 14.0);
+  assert.ok(top.longitude > 79.5 && top.longitude < 81.0);
+});
+
+test('Geocoding: Forward geocode resolves landmark (Marina Beach)', async () => {
+  const results = await forwardGeocode('Marina Beach, Chennai', 3);
+  assert.ok(results.length > 0, 'Should return matching results for Marina Beach');
+  const top = results[0];
+  assert.ok(top.latitude > 12.5 && top.latitude < 13.5);
+  assert.ok(top.longitude > 80.0 && top.longitude < 80.5);
+});
+
+test('Geocoding: Forward geocode resolves PIN code (600042)', async () => {
+  const results = await forwardGeocode('600042', 3);
+  assert.ok(results.length > 0, 'Should return matching results for PIN 600042');
+  const top = results[0];
+  assert.ok(top.display_name.includes('600042') || top.display_name.toLowerCase().includes('velachery'));
+});
+
+test('Geocoding: Graceful empty response for unknown/invalid location', async () => {
+  const results = await forwardGeocode('xyzabc999nonexistentplace12345', 3);
+  assert.ok(Array.isArray(results), 'Should safely return an array');
+  assert.equal(results.length, 0, 'Should return 0 matches for invalid place without throwing');
+});
+
+test('Geocoding: Reverse geocode converts coordinates into human-readable address', async () => {
+  const location = await reverseGeocode(12.9815, 80.2180);
+  assert.ok(location !== null, 'Should resolve location object');
+  assert.ok(location?.display_name.toLowerCase().includes('velachery') || location?.display_name.toLowerCase().includes('chennai'));
+});
+
+test('Geocoding: Reverse geocode rejects out-of-bounds coordinates safely', async () => {
+  const location = await reverseGeocode(999.0, 999.0);
+  assert.equal(location, null, 'Out of bounds coordinates should safely return null');
+});
+
+// ── Test 12: Distance & Proximity Calculations ────────────────────
+test('Distance: Great-circle Haversine distance calculation and formatting', () => {
+  // Distance between same points is 0
+  const zeroDist = calculateDistanceKm(12.9815, 80.2180, 12.9815, 80.2180);
+  assert.equal(zeroDist, 0);
+
+  // Velachery (12.9815, 80.2180) to Tambaram (12.9249, 80.1264) is ~11.7 km
+  const distKm = calculateDistanceKm(12.9815, 80.2180, 12.9249, 80.1264);
+  assert.ok(distKm > 10 && distKm < 14, `Expected ~11.7 km, got ${distKm}`);
+
+  // Format tests
+  assert.equal(formatDistance(0.45), '450 m');
+  assert.equal(formatDistance(11.73), '11.7 km');
+});
+
+// ── Test 13: Incident Form without Manual Coordinates ─────────────
+test('Incident Validation: Incident report without manual lat/lon passes validation', () => {
+  const userReportWithoutCoordinates = {
+    title: 'Severe Waterlogging at Velachery Main Road',
+    category: 'flood',
+    description: 'Road submerged under 2 feet of water. Vehicles stranded near bus terminus.',
+    severity: 'high',
+    location_name: 'Velachery Main Road, Chennai',
+    // No latitude or longitude provided by user
+  };
+
+  const parsed = reportIncidentSchema.safeParse(userReportWithoutCoordinates);
+  assert.equal(parsed.success, true);
+  assert.equal(parsed.data?.latitude, undefined);
+  assert.equal(parsed.data?.longitude, undefined);
+  assert.equal(parsed.data?.location_name, 'Velachery Main Road, Chennai');
 });
 
 console.log('✅ All ReliefNet Automated Test Suites Passed Successfully!');
