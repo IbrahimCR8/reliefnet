@@ -40,7 +40,7 @@ export function useIncidents(options: UseIncidentsOptions = {}): UseIncidentsRes
         const res = await fetch(`/api/incidents?${params.toString()}`);
         if (!res.ok) throw new Error('Failed to fetch incidents');
         const data = await res.json();
-        setIncidents(data.incidents || []);
+        setIncidents((data.incidents || []).filter((i: Incident) => i.status !== 'rejected'));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -66,7 +66,9 @@ export function useIncidents(options: UseIncidentsOptions = {}): UseIncidentsRes
           const res = await fetch(`/api/incidents?${params.toString()}`);
           if (!res.ok) throw new Error('Failed to fetch incidents');
           const data = await res.json();
-          if (!ignore) setIncidents(data.incidents || []);
+          if (!ignore) {
+            setIncidents((data.incidents || []).filter((i: Incident) => i.status !== 'rejected'));
+          }
         }
       } catch (err) {
         if (!ignore) setError(err instanceof Error ? err.message : String(err));

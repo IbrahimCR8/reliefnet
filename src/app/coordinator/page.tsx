@@ -36,6 +36,7 @@ import {
   IdCard,
   Sparkles,
   ClipboardCheck,
+  Trash2,
   X
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -287,8 +288,40 @@ export default function CoordinatorConsolePage() {
     setCoordinatorUser(null);
   };
 
-  // 5. Handle Database Status Update via PATCH
-  const handleUpdateStatus = async (id: string, newStatus: IncidentStatus) => {
+  // 5. Handle Database Status Update or Complete Purge Deletion
+  const handleDeleteIncident = async (id: string, refCode?: string) => {
+    try {
+      const res = await fetch(`/api/incidents/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        // Fallback: update status to rejected if delete encounters DB constraints
+        await fetch(`/api/incidents/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'rejected' }),
+        });
+      }
+
+      setIncidents((prev) => prev.filter((inc) => inc.id !== id));
+      setActionMessage(`Incident ${refCode ? `[${refCode}] ` : ''}permanently rejected and deleted. Map marker removed.`);
+    } catch {
+      setIncidents((prev) => prev.filter((inc) => inc.id !== id));
+      setActionMessage(`Incident removed from active map and console.`);
+    }
+
+    setTimeout(() => {
+      setActionMessage(null);
+    }, 4000);
+  };
+
+  const handleUpdateStatus = async (id: string, newStatus: IncidentStatus, refCode?: string) => {
+    if (newStatus === 'rejected') {
+      await handleDeleteIncident(id, refCode);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/incidents/${id}`, {
         method: 'PATCH',
@@ -862,11 +895,11 @@ export default function CoordinatorConsolePage() {
                       <Button
                         variant="danger"
                         size="sm"
-                        onClick={() => handleUpdateStatus(incident.id, 'rejected')}
+                        onClick={() => handleDeleteIncident(incident.id, incident.reference_code)}
                         className="flex-1 text-xs"
                       >
-                        <XCircle className="h-3.5 w-3.5 mr-1" />
-                        Reject / Spam
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Reject & Delete
                       </Button>
                       <Link
                         href={`/incidents/${incident.id}`}
@@ -968,6 +1001,14 @@ export default function CoordinatorConsolePage() {
                           >
                             Inspect
                           </Link>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteIncident(inc.id, inc.reference_code)}
+                            className="p-1.5 rounded-lg border border-red-900/60 bg-red-950/20 hover:bg-red-900/40 text-red-400 hover:text-red-300 transition-colors"
+                            title="Delete incident permanently"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>

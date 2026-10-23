@@ -95,3 +95,45 @@ export async function PATCH(
     );
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json({ success: true, deletedId: id, is_demo: true });
+  }
+
+  try {
+    const supabase = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? await createServiceClient()
+      : await createClient();
+
+    // 1. Clean up associated media, assignments, and status history
+    await supabase.from('incident_media').delete().eq('incident_id', id);
+    await supabase.from('volunteer_assignments').delete().eq('incident_id', id);
+    await supabase.from('incident_status_history').delete().eq('incident_id', id);
+
+    // 2. Delete the incident record completely from database
+    const { error } = await supabase.from('incidents').delete().eq('id', id);
+
+    if (error) {
+      console.error('[incidents/delete] Supabase error deleting incident:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Incident and all associated data permanently deleted from database.',
+      deletedId: id,
+    });
+  } catch (err) {
+    console.error('[incidents/delete] Unexpected error:', err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Failed to delete incident' },
+      { status: 500 }
+    );
+  }
+}

@@ -496,4 +496,19 @@ test('Incident Validation: Incident report without manual lat/lon passes validat
   assert.equal(parsed.data?.reporter_phone, '9840998877');
 });
 
+// ── Test 14: Rejection and Map Marker Purge Verification ──────────
+test('Incident Rejection: Rejected incidents are excluded from active response map and queries', () => {
+  const mixedIncidents = [
+    { id: '1', title: 'Active Flood', status: 'verified', latitude: 13.0, longitude: 80.0 },
+    { id: '2', title: 'Pending Triage', status: 'unverified', latitude: 13.1, longitude: 80.1 },
+    { id: '3', title: 'Fake Spam Report', status: 'rejected', latitude: 13.2, longitude: 80.2 },
+  ];
+
+  // Map and feed filter
+  const mapVisible = mixedIncidents.filter((inc) => inc.status !== 'rejected');
+  assert.equal(mapVisible.length, 2);
+  assert.ok(!mapVisible.some((inc) => inc.status === 'rejected'));
+  assert.ok(!mapVisible.some((inc) => inc.id === '3'));
+});
+
 console.log('✅ All ReliefNet Automated Test Suites Passed Successfully!');

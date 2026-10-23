@@ -162,6 +162,7 @@ export default function MapComponent({
       typeof inc.longitude === 'number' &&
       !isNaN(inc.latitude) &&
       !isNaN(inc.longitude) &&
+      inc.status !== 'rejected' &&
       (!selectedCategory || inc.category === selectedCategory) &&
       (!selectedSeverity || inc.severity === selectedSeverity) &&
       (!selectedStatus || inc.status === selectedStatus)

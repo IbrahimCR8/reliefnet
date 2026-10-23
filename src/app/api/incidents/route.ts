@@ -24,7 +24,11 @@ export async function GET(request: NextRequest) {
       .eq('is_demo', false)
       .order('created_at', { ascending: false });
 
-    if (status) query = query.eq('status', status);
+    if (status) {
+      query = query.eq('status', status);
+    } else {
+      query = query.neq('status', 'rejected');
+    }
     if (category) query = query.eq('category', category);
     if (severity) query = query.eq('severity', severity);
 
