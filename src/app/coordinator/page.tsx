@@ -130,23 +130,22 @@ export default function CoordinatorConsolePage() {
         const supabase = createClient();
         supabase.auth.getUser().then(async ({ data: { user }, error }) => {
           if (user && !error) {
-            // Verify role in profiles table to prevent volunteer accounts from entering
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('role, full_name')
-              .eq('id', user.id)
-              .maybeSingle();
+            // Verify role via secure backend API (bypasses RLS recursion)
+            const roleRes = await fetch('/api/auth/verify-role', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: user.email, userId: user.id }),
+            });
+            const roleData = await roleRes.json().catch(() => ({}));
 
-            const role = profile?.role || user.app_metadata?.role || user.user_metadata?.role;
-            if (role === 'coordinator' || role === 'admin') {
+            if (roleData?.isCoordinator) {
               setCoordinatorUser({
                 email: user.email || 'coordinator@reliefnet.org',
-                role: role === 'admin' ? 'System Administrator / Commander' : 'Incident Commander / Zonal Coordinator',
+                role: roleData.role === 'admin' ? 'System Administrator / Commander' : 'Incident Commander / Zonal Coordinator',
               });
             } else {
               // Active session is a volunteer account - deny access to command terminal
               setCoordinatorUser(null);
-              setLoginError(`Access Restricted: You are currently signed in as "${user.email}" with role "${role || 'volunteer'}". Coordinator or Admin privileges are required. Please log in at the Volunteer Portal.`);
             }
           } else {
             setCoordinatorUser(null);
@@ -242,27 +241,26 @@ export default function CoordinatorConsolePage() {
           return;
         }
 
-        // ── STRICT RBAC CHECK: Verify User Role in Profiles Table ──
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role, full_name')
-          .eq('id', data.user.id)
-          .maybeSingle();
+        // ── STRICT RBAC CHECK: Verify User Role via Server API (bypasses RLS) ──
+        const roleRes = await fetch('/api/auth/verify-role', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: data.user.email, userId: data.user.id }),
+        });
+        const roleData = await roleRes.json().catch(() => ({}));
 
-        const userRole = profile?.role || data.user.app_metadata?.role || data.user.user_metadata?.role || 'volunteer';
-
-        if (userRole !== 'coordinator' && userRole !== 'admin') {
+        if (!roleData?.isCoordinator) {
           // Immediately sign out unauthorized volunteer user
           await supabase.auth.signOut();
           setLoginError(
-            `Access Denied: This account (${data.user.email}) is registered as a "Volunteer". Only authorized Zonal Coordinators and Admins can access this command terminal. Please sign in via the Volunteer Portal at /volunteers.`
+            `Access Denied: This account (${data.user.email}) is registered as a "${roleData?.role || 'Volunteer'}". Only authorized Zonal Coordinators and Admins can access this command terminal. Please sign in via the Volunteer Portal at /volunteers.`
           );
           return;
         }
 
         setCoordinatorUser({
           email: data.user.email || loginEmail.trim(),
-          role: userRole === 'admin' ? 'System Administrator / Commander' : 'Incident Commander / Zonal Coordinator',
+          role: roleData.role === 'admin' ? 'System Administrator / Commander' : 'Incident Commander / Zonal Coordinator',
         });
       } else {
         setLoginError('Supabase authentication is not configured in .env.local.');

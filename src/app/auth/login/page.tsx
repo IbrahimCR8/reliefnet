@@ -25,14 +25,14 @@ export default function LoginPage() {
         const supabase = createClient();
         supabase.auth.getSession().then(async ({ data: { session } }) => {
           if (session?.user) {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('role')
-              .eq('id', session.user.id)
-              .maybeSingle();
+            const roleRes = await fetch('/api/auth/verify-role', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: session.user.email, userId: session.user.id }),
+            });
+            const roleData = await roleRes.json().catch(() => ({}));
 
-            const role = profile?.role || session.user.app_metadata?.role || session.user.user_metadata?.role;
-            if (role === 'coordinator' || role === 'admin') {
+            if (roleData?.isCoordinator) {
               router.push('/coordinator');
             }
           }
@@ -69,18 +69,18 @@ export default function LoginPage() {
       }
 
       if (data?.user) {
-        // Strict RBAC Verification: Volunteers cannot log in as Coordinator
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', data.user.id)
-          .maybeSingle();
+        // Strict RBAC Verification via Server API (bypasses RLS)
+        const roleRes = await fetch('/api/auth/verify-role', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: data.user.email, userId: data.user.id }),
+        });
+        const roleData = await roleRes.json().catch(() => ({}));
 
-        const role = profile?.role || data.user.app_metadata?.role || data.user.user_metadata?.role || 'volunteer';
-        if (role !== 'coordinator' && role !== 'admin') {
+        if (!roleData?.isCoordinator) {
           await supabase.auth.signOut();
           setError(
-            `Access Denied: This account (${data.user.email}) is registered as a "Volunteer". Only authorized Zonal Coordinators and Admins can log in here. Please log in at the Volunteer Portal at /volunteers.`
+            `Access Denied: This account (${data.user.email}) is registered as a "${roleData?.role || 'Volunteer'}". Coordinator or Admin privileges are required to access this portal. Please sign in via the Volunteer Login portal at /volunteers.`
           );
           return;
         }
