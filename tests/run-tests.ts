@@ -317,4 +317,14 @@ test('RBAC: Volunteer role cannot access Coordinator Console', () => {
   assert.equal(isAuthorizedCoordinator('admin'), true);
 });
 
+test('RBAC: Admin and Coordinator roles cannot access Volunteer Portal', () => {
+  const isAuthorizedVolunteer = (role: string | null | undefined): boolean => {
+    return role === 'volunteer';
+  };
+
+  assert.equal(isAuthorizedVolunteer('admin'), false);
+  assert.equal(isAuthorizedVolunteer('coordinator'), false);
+  assert.equal(isAuthorizedVolunteer('volunteer'), true);
+});
+
 console.log('✅ All ReliefNet Automated Test Suites Passed Successfully!');

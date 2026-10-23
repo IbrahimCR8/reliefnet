@@ -285,6 +285,23 @@ export default function VolunteersPage() {
           return;
         }
 
+        // Strict RBAC: Admins and Coordinators cannot log in as Volunteer!
+        const roleRes = await fetch('/api/auth/verify-role', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: targetEmail, userId: data?.user?.id }),
+        });
+        const roleData = await roleRes.json().catch(() => ({}));
+
+        if (roleData?.role === 'admin' || roleData?.role === 'coordinator') {
+          await supabase.auth.signOut();
+          setLoginError(
+            `Access Denied: Account (${targetEmail}) is registered as an ${roleData.role.toUpperCase()}. Administrators and Coordinators cannot log in as Volunteers. Please sign in via the Coordinator Console at /coordinator.`
+          );
+          setLoginLoading(false);
+          return;
+        }
+
         // 1. Mark presence online
         fetch('/api/volunteers/presence', {
           method: 'POST',

@@ -4,7 +4,12 @@ import { isSupabaseConfigured } from '@/lib/supabase/client';
 
 export async function POST(request: NextRequest) {
   if (!isSupabaseConfigured()) {
-    return NextResponse.json({ role: 'volunteer', isCoordinator: false }, { status: 503 });
+    return NextResponse.json({
+      role: 'volunteer',
+      isCoordinator: false,
+      isAdmin: false,
+      isVolunteer: true,
+    }, { status: 503 });
   }
 
   try {
@@ -26,21 +31,41 @@ export async function POST(request: NextRequest) {
 
     const { data: profile, error } = await query.maybeSingle();
 
-    if (error) {
-      console.error('Error fetching role in verify-role:', error.message);
-      return NextResponse.json({ role: 'volunteer', isCoordinator: false });
-    }
+    if (error || !profile) {
+      // Check if they exist in volunteer_profiles
+      const volQuery = userId 
+        ? supabase.from('volunteer_profiles').select('id, email, name').eq('user_id', userId)
+        : supabase.from('volunteer_profiles').select('id, email, name').ilike('email', email.trim());
+      const { data: vol } = await volQuery.maybeSingle();
 
-    if (!profile) {
-      return NextResponse.json({ role: 'volunteer', isCoordinator: false });
+      if (vol) {
+        return NextResponse.json({
+          role: 'volunteer',
+          isCoordinator: false,
+          isAdmin: false,
+          isVolunteer: true,
+          email: vol.email,
+        });
+      }
+
+      return NextResponse.json({
+        role: 'volunteer',
+        isCoordinator: false,
+        isAdmin: false,
+        isVolunteer: true,
+      });
     }
 
     const role = profile.role;
+    const isAdmin = role === 'admin';
     const isCoordinator = role === 'coordinator' || role === 'admin';
+    const isVolunteer = role === 'volunteer';
 
     return NextResponse.json({
       role,
+      isAdmin,
       isCoordinator,
+      isVolunteer,
       full_name: profile.full_name,
       email: profile.email,
     });
