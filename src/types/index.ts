@@ -57,6 +57,7 @@ export interface Incident {
   created_at: string;
   updated_at: string;
   is_demo: boolean;
+  incident_media?: IncidentMedia[];
 }
 
 export interface IncidentMedia {

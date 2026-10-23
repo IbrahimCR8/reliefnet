@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -37,7 +38,10 @@ import {
   Sparkles,
   ClipboardCheck,
   Trash2,
-  X
+  X,
+  Camera,
+  ZoomIn,
+  ExternalLink
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -122,6 +126,13 @@ export default function CoordinatorConsolePage() {
   const [manualVolunteerId, setManualVolunteerId] = useState<string>('');
   const [verificationInterviewNotes, setVerificationInterviewNotes] = useState<string>('Phone interview completed. Candidate identity, location, and relief skills confirmed.');
   const [verificationSubmitting, setVerificationSubmitting] = useState(false);
+
+  // Evidence Lightbox State
+  const [previewModalImage, setPreviewModalImage] = useState<{
+    url: string;
+    title: string;
+    refCode: string;
+  } | null>(null);
 
   const supabaseReady = isSupabaseConfigured();
 
@@ -846,6 +857,45 @@ export default function CoordinatorConsolePage() {
 
                     <h3 className="font-bold text-white text-base">{incident.title}</h3>
 
+                    {/* Photographic Evidence Preview */}
+                    {incident.incident_media && incident.incident_media[0]?.cloudinary_url ? (
+                      <div
+                        className="relative rounded-lg overflow-hidden border border-slate-700 bg-slate-950 cursor-pointer group hover:border-orange-500 transition-all shadow-md"
+                        onClick={() =>
+                          setPreviewModalImage({
+                            url: incident.incident_media![0].cloudinary_url,
+                            title: incident.title,
+                            refCode: incident.reference_code,
+                          })
+                        }
+                      >
+                        <div className="relative h-44 w-full">
+                          <img
+                            src={incident.incident_media[0].cloudinary_url}
+                            alt={`Evidence for ${incident.reference_code}`}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-transparent to-transparent pointer-events-none" />
+                          <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-950/90 border border-slate-700 text-[10px] font-semibold text-slate-200 shadow">
+                              <Camera className="h-3 w-3 text-orange-400" />
+                              Citizen Photo Evidence
+                            </span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-orange-600/90 hover:bg-orange-500 text-[10px] font-bold text-white shadow transition-colors">
+                              <ZoomIn className="h-3 w-3" />
+                              Inspect
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-2 rounded-lg border border-dashed border-slate-800 bg-slate-950/50 text-[11px] text-slate-500 flex items-center gap-1.5">
+                        <Camera className="h-3.5 w-3.5 text-slate-600" />
+                        <span>No photographic evidence attached</span>
+                      </div>
+                    )}
+
                     <p className="text-xs text-slate-300 leading-relaxed line-clamp-3">
                       {incident.description}
                     </p>
@@ -948,6 +998,7 @@ export default function CoordinatorConsolePage() {
                     <th className="p-3.5 font-semibold">Category</th>
                     <th className="p-3.5 font-semibold">Severity</th>
                     <th className="p-3.5 font-semibold">Status</th>
+                    <th className="p-3.5 font-semibold text-center">Photo</th>
                     <th className="p-3.5 font-semibold text-right">Coordinator Action</th>
                   </tr>
                 </thead>
@@ -972,6 +1023,31 @@ export default function CoordinatorConsolePage() {
                       </td>
                       <td className="p-3.5 whitespace-nowrap">
                         <StatusBadge status={inc.status} />
+                      </td>
+                      <td className="p-3.5 text-center whitespace-nowrap">
+                        {inc.incident_media && inc.incident_media[0]?.cloudinary_url ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewModalImage({
+                                url: inc.incident_media![0].cloudinary_url,
+                                title: inc.title,
+                                refCode: inc.reference_code,
+                              })
+                            }
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-800 border border-slate-700 hover:border-orange-500 text-slate-200 hover:text-white transition-all text-[11px] group"
+                            title="Inspect ground photographic evidence"
+                          >
+                            <img
+                              src={inc.incident_media[0].cloudinary_url}
+                              alt=""
+                              className="w-5 h-5 rounded object-cover border border-slate-600"
+                            />
+                            <span className="text-orange-400 font-semibold group-hover:underline">Photo</span>
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-slate-600 italic">None</span>
+                        )}
                       </td>
                       <td className="p-3.5 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5">
@@ -1648,6 +1724,64 @@ UPDATE public.profiles
 SET role = 'coordinator'
 WHERE email = 'admin@reliefnet.com';`}
               </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Coordinator Evidence Lightbox Modal */}
+      {previewModalImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
+          onClick={() => setPreviewModalImage(null)}
+        >
+          <div
+            className="relative max-w-4xl w-full max-h-[90vh] flex flex-col bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/80">
+              <div className="flex items-center gap-2">
+                <Camera className="h-4 w-4 text-orange-400" />
+                <span className="text-xs font-bold text-white font-mono bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                  {previewModalImage.refCode}
+                </span>
+                <span className="text-xs text-slate-300 font-semibold truncate max-w-md">
+                  {previewModalImage.title}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewModalImage.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors flex items-center gap-1 text-xs"
+                  title="Open full-resolution image"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Original</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewModalImage(null)}
+                  className="p-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                  title="Close inspection view"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-auto max-h-[70vh] flex items-center justify-center bg-black/80 p-4">
+              <img
+                src={previewModalImage.url}
+                alt="Enlarged incident evidence"
+                className="max-h-[66vh] w-auto max-w-full object-contain rounded-lg shadow-2xl"
+              />
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between text-xs text-slate-400">
+              <span>Ground Photographic Evidence Verification</span>
+              <span className="text-slate-500 font-mono text-[11px]">Coordinator Triage Console</span>
             </div>
           </div>
         </div>

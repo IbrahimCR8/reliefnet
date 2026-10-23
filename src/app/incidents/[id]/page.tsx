@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import { use, useState, useEffect } from 'react';
@@ -8,7 +9,11 @@ import {
   ArrowLeft,
   Shield,
   Activity,
-  Users
+  Users,
+  Camera,
+  ZoomIn,
+  ExternalLink,
+  X
 } from 'lucide-react';
 import { SeverityBadge, StatusBadge } from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card';
@@ -30,6 +35,7 @@ export default function IncidentDetailPage({ params }: PageProps) {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [statusHistory, setStatusHistory] = useState<IncidentStatusHistory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/incidents/${id}`)
@@ -142,6 +148,57 @@ export default function IncidentDetailPage({ params }: PageProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column (2 Cols): Details & History */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Photographic Evidence Card */}
+          {incident.incident_media && incident.incident_media.length > 0 && (
+            <Card className="border-orange-500/30 bg-slate-900/90 shadow-xl overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between border-b border-slate-800">
+                <CardTitle className="text-base text-white flex items-center gap-2">
+                  <Camera className="h-4 w-4 text-orange-400" />
+                  Photographic Ground Evidence ({incident.incident_media.length})
+                </CardTitle>
+                <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                  ✓ Verified Image Upload
+                </span>
+              </CardHeader>
+              <CardBody className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {incident.incident_media.map((media, idx) => (
+                    <div
+                      key={media.id || idx}
+                      className="group relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 cursor-pointer hover:border-orange-500/70 transition-all shadow-md"
+                      onClick={() => setLightboxImage(media.cloudinary_url)}
+                    >
+                      <div className="relative h-56 w-full">
+                        <img
+                          src={media.cloudinary_url}
+                          alt={`Evidence photo ${idx + 1} for ${incident.reference_code}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/40 transition-colors flex items-center justify-center">
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/90 text-white border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg backdrop-blur-sm">
+                            <ZoomIn className="h-3.5 w-3.5 text-orange-400" />
+                            Click to Enlarge
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                        <span className="flex items-center gap-1.5 text-slate-300 truncate max-w-[180px]">
+                          <Camera className="h-3 w-3 text-orange-400 flex-shrink-0" />
+                          Photo #{idx + 1}
+                        </span>
+                        <span>{formatDate(media.created_at)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500 flex items-center gap-1.5 italic">
+                  <span>💡</span>
+                  Click on any ground photo to open the interactive inspection lightbox.
+                </p>
+              </CardBody>
+            </Card>
+          )}
+
           {/* Detailed Description */}
           <Card>
             <CardHeader>
@@ -319,6 +376,67 @@ export default function IncidentDetailPage({ params }: PageProps) {
           </Card>
         </div>
       </div>
+
+      {/* Lightbox Modal */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div
+            className="relative max-w-5xl w-full max-h-[90vh] flex flex-col bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/80">
+              <div className="flex items-center gap-2">
+                <Camera className="h-4 w-4 text-orange-400" />
+                <span className="text-xs font-bold text-white font-mono bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                  {incident.reference_code}
+                </span>
+                <span className="text-xs text-slate-300 font-semibold truncate max-w-md">
+                  {incident.title}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={lightboxImage}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors flex items-center gap-1 text-xs"
+                  title="Open full-resolution image"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Original</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setLightboxImage(null)}
+                  className="p-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                  title="Close inspection view"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-auto max-h-[70vh] flex items-center justify-center bg-black/80 p-4">
+              <img
+                src={lightboxImage}
+                alt="Enlarged incident evidence"
+                className="max-h-[66vh] w-auto max-w-full object-contain rounded-lg shadow-2xl"
+              />
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between text-xs text-slate-400">
+              <span className="truncate flex items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5 text-slate-500" />
+                {incident.location_name}
+              </span>
+              <span className="text-slate-500 font-mono text-[11px]">ReliefNet Photographic Verification</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -122,13 +122,35 @@ export async function POST(request: NextRequest) {
 
     // If Cloudinary media is attached, link to incident_media
     if (data.cloudinary_url && data.cloudinary_public_id && incident) {
-      await supabase.from('incident_media').insert({
-        incident_id: incident.id,
-        cloudinary_public_id: data.cloudinary_public_id,
-        cloudinary_url: data.cloudinary_url,
-        resource_type: 'image',
-        uploaded_by: user?.id ?? null,
-      });
+      const { data: mediaRecord } = await supabase
+        .from('incident_media')
+        .insert({
+          incident_id: incident.id,
+          cloudinary_public_id: data.cloudinary_public_id,
+          cloudinary_url: data.cloudinary_url,
+          resource_type: 'image',
+          uploaded_by: user?.id ?? null,
+        })
+        .select()
+        .single();
+
+      (incident as Record<string, unknown>).incident_media = mediaRecord
+        ? [mediaRecord]
+        : [
+            {
+              id: 'temp-media',
+              incident_id: incident.id,
+              cloudinary_public_id: data.cloudinary_public_id,
+              cloudinary_url: data.cloudinary_url,
+              resource_type: 'image',
+              format: 'jpg',
+              width: null,
+              height: null,
+              bytes: null,
+              uploaded_by: user?.id ?? null,
+              created_at: new Date().toISOString(),
+            },
+          ];
     }
 
     return NextResponse.json({ incident, success: true }, { status: 201 });

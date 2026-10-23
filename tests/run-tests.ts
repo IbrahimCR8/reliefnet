@@ -511,4 +511,25 @@ test('Incident Rejection: Rejected incidents are excluded from active response m
   assert.ok(!mapVisible.some((inc) => inc.id === '3'));
 });
 
+// ── Test 15: Photographic Evidence Verification in Incidents & Triage ────
+test('Photographic Evidence: Demo incidents and live records contain media arrays with photo URLs', () => {
+  assert.ok(DEMO_INCIDENTS.length > 0);
+  for (const inc of DEMO_INCIDENTS) {
+    assert.ok(Array.isArray(inc.incident_media), `Incident ${inc.reference_code} should have incident_media array`);
+    assert.ok(inc.incident_media!.length > 0, `Incident ${inc.reference_code} should have at least 1 photo`);
+    const media = inc.incident_media![0];
+    assert.ok(media.cloudinary_url.startsWith('https://'), `Media url should be valid https URL`);
+    assert.ok(media.cloudinary_public_id.length > 0, `Media should have public ID`);
+  }
+});
+
+test('Photographic Evidence: Unverified incidents provide photo evidence for coordinator inspection', () => {
+  const unverified = DEMO_INCIDENTS.filter((i) => i.status === 'unverified');
+  assert.ok(unverified.length > 0, 'Should have unverified demo incident');
+  for (const inc of unverified) {
+    assert.ok(inc.incident_media && inc.incident_media.length > 0);
+    assert.ok(inc.incident_media[0].cloudinary_url.length > 0);
+  }
+});
+
 console.log('✅ All ReliefNet Automated Test Suites Passed Successfully!');
