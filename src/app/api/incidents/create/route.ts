@@ -57,25 +57,60 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data: incident, error: insertError } = await supabase
+    const insertPayload: Record<string, unknown> = {
+      reference_code,
+      title: data.title,
+      category: data.category,
+      description: data.description,
+      severity: data.severity,
+      location_name: data.location_name,
+      latitude: resolvedLat,
+      longitude: resolvedLon,
+      people_affected: data.people_affected ?? null,
+      assistance_requested: data.assistance_requested ?? null,
+      reporter_name: data.reporter_name,
+      reporter_phone: data.reporter_phone,
+      status: 'unverified',
+      reported_by: user?.id ?? null,
+      is_demo: false,
+    };
+
+    let { data: incident, error: insertError } = await supabase
       .from('incidents')
-      .insert({
-        reference_code,
-        title: data.title,
-        category: data.category,
-        description: data.description,
-        severity: data.severity,
-        location_name: data.location_name,
-        latitude: resolvedLat,
-        longitude: resolvedLon,
-        people_affected: data.people_affected ?? null,
-        assistance_requested: data.assistance_requested ?? null,
-        status: 'unverified',
-        reported_by: user?.id ?? null,
-        is_demo: false,
-      })
+      .insert(insertPayload)
       .select()
       .single();
+
+    // If database table does not yet have reporter_name/reporter_phone columns,
+    // fallback gracefully by preserving the contact info inside assistance_requested
+    if (insertError && (insertError.message?.includes('reporter_name') || insertError.message?.includes('reporter_phone'))) {
+      console.warn('[incidents/create] reporter columns not in schema yet, falling back to assistance_requested preservation');
+      const contactHeader = `[Reporter: ${data.reporter_name} | Phone: ${data.reporter_phone}]`;
+      const fallbackAssistance = data.assistance_requested
+        ? `${contactHeader}\n${data.assistance_requested}`
+        : contactHeader;
+
+      const fallbackPayload: Record<string, unknown> = {
+        ...insertPayload,
+        assistance_requested: fallbackAssistance,
+      };
+      delete fallbackPayload.reporter_name;
+      delete fallbackPayload.reporter_phone;
+
+      const fallbackResult = await supabase
+        .from('incidents')
+        .insert(fallbackPayload)
+        .select()
+        .single();
+
+      incident = fallbackResult.data;
+      insertError = fallbackResult.error;
+
+      if (incident) {
+        (incident as Record<string, unknown>).reporter_name = data.reporter_name;
+        (incident as Record<string, unknown>).reporter_phone = data.reporter_phone;
+      }
+    }
 
     if (insertError) {
       console.error('[incidents/create] Insert error:', insertError);

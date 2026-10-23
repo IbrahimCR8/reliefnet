@@ -16,6 +16,7 @@ import {
   Users,
   MapPin,
   Phone,
+  User,
   Mail,
   Lock,
   Eye,
@@ -825,6 +826,21 @@ export default function CoordinatorConsolePage() {
                         <Clock className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
                         <strong>Reported:</strong> {formatDate(incident.created_at)}
                       </p>
+                      {incident.reporter_name && (
+                        <p className="flex items-center gap-1.5 text-slate-300">
+                          <User className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                          <strong>Reporter:</strong> {incident.reporter_name}
+                          {incident.reporter_phone && (
+                            <a
+                              href={`tel:${incident.reporter_phone}`}
+                              className="ml-auto text-orange-400 hover:text-orange-300 font-mono text-[11px] underline flex items-center gap-1"
+                            >
+                              <Phone className="h-3 w-3" />
+                              {incident.reporter_phone}
+                            </a>
+                          )}
+                        </p>
+                      )}
                       {incident.people_affected && (
                         <p className="flex items-center gap-1.5 text-orange-300">
                           <Users className="h-3.5 w-3.5 text-orange-400 flex-shrink-0" />

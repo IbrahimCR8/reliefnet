@@ -228,6 +228,25 @@ export default function IncidentDetailPage({ params }: PageProps) {
 
               <div>
                 <span className="text-slate-500 block uppercase tracking-wider font-semibold mb-0.5">
+                  Reported By (Citizen Contact)
+                </span>
+                <div className="space-y-0.5">
+                  <p className="text-slate-200 font-medium">
+                    {incident.reporter_name || 'Ground Citizen Observer'}
+                  </p>
+                  {incident.reporter_phone && (
+                    <a
+                      href={`tel:${incident.reporter_phone}`}
+                      className="inline-flex items-center gap-1 text-orange-400 hover:text-orange-300 font-mono"
+                    >
+                      📞 {incident.reporter_phone}
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-slate-500 block uppercase tracking-wider font-semibold mb-0.5">
                   Affected Persons
                 </span>
                 <span className="text-slate-200 font-medium">

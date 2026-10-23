@@ -24,6 +24,14 @@ export const reportIncidentSchema = z.object({
     .string()
     .min(3, 'Location name is required')
     .max(200, 'Location name too long'),
+  reporter_name: z
+    .string()
+    .min(2, 'Your full name is required (minimum 2 characters)')
+    .max(100, 'Name cannot exceed 100 characters'),
+  reporter_phone: z
+    .string()
+    .min(10, 'Contact phone number is required')
+    .regex(/^(\+91[\-\s]?)?[6-9]\d{9}$/, 'Please enter a valid 10-digit mobile number (e.g. 9876543210)'),
   latitude: z
     .number()
     .min(-90)
@@ -47,8 +55,12 @@ export const reportIncidentSchema = z.object({
     .string()
     .max(1000)
     .optional(),
-  cloudinary_public_id: z.string().optional(),
-  cloudinary_url: z.string().url().optional(),
+  cloudinary_public_id: z
+    .string()
+    .min(1, 'Photographic evidence is mandatory'),
+  cloudinary_url: z
+    .string()
+    .min(1, 'Photographic evidence is mandatory to report an incident'),
 });
 
 export const loginSchema = z.object({

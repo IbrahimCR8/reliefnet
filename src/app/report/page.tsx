@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, CheckCircle, MapPin, Shield } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Shield, Phone } from 'lucide-react';
 import { reportIncidentSchema, type ReportIncidentFormData } from '@/lib/validations';
 import { Input, Textarea, Select } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -58,18 +58,20 @@ export default function ReportPage() {
     register('location_name');
     register('latitude');
     register('longitude');
+    register('cloudinary_url');
+    register('cloudinary_public_id');
   }, [register]);
 
   const handlePhotoUploadComplete = (result: { public_id: string; secure_url: string }) => {
     setUploadedMedia(result);
-    setValue('cloudinary_public_id', result.public_id);
-    setValue('cloudinary_url', result.secure_url);
+    setValue('cloudinary_public_id', result.public_id, { shouldValidate: true });
+    setValue('cloudinary_url', result.secure_url, { shouldValidate: true });
   };
 
   const handlePhotoClear = () => {
     setUploadedMedia(null);
-    setValue('cloudinary_public_id', undefined);
-    setValue('cloudinary_url', undefined);
+    setValue('cloudinary_public_id', '', { shouldValidate: true });
+    setValue('cloudinary_url', '', { shouldValidate: true });
   };
 
   const onSubmit = async (data: ReportIncidentFormData) => {
@@ -204,6 +206,42 @@ export default function ReportPage() {
           />
         </div>
 
+        {/* Reporter Contact Information (Mandatory for Field Verification) */}
+        <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-xl space-y-3">
+          <div className="border-b border-slate-800 pb-2">
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+              <Phone className="h-3.5 w-3.5 text-orange-400" />
+              Reporter Identification & Contact (Mandatory)
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Coordinators will call this phone number to verify the crisis before dispatching emergency responders.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Your Full Name"
+              id="reporter_name"
+              required
+              placeholder="e.g. Ramesh Kumar"
+              error={errors.reporter_name?.message}
+              {...register('reporter_name')}
+              disabled={submitting}
+            />
+
+            <Input
+              label="Contact Mobile / Phone Number"
+              id="reporter_phone"
+              type="tel"
+              required
+              placeholder="e.g. 9876543210"
+              error={errors.reporter_phone?.message}
+              {...register('reporter_phone')}
+              disabled={submitting}
+            />
+          </div>
+        </div>
+
         {/* User-friendly Location Input (Auto-geocoded in background, no manual lat/lon) */}
         <LocationSearchInput
           label="Location, Address, Area, or Landmark"
@@ -254,11 +292,12 @@ export default function ReportPage() {
           disabled={submitting}
         />
 
-        {/* Cloudinary Photo Upload */}
+        {/* Mandatory Photographic Evidence */}
         <div className="pt-2">
           <PhotoUpload
             onUploadComplete={handlePhotoUploadComplete}
             onClear={handlePhotoClear}
+            error={errors.cloudinary_url?.message}
           />
         </div>
 

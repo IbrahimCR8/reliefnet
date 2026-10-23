@@ -49,6 +49,8 @@ export interface Incident {
   longitude: number | null;
   people_affected: number | null;
   assistance_requested: string | null;
+  reporter_name?: string | null;
+  reporter_phone?: string | null;
   reported_by: string | null;
   verified_by: string | null;
   verified_at: string | null;
@@ -123,6 +125,8 @@ export interface ReportIncidentInput {
   description: string;
   severity: IncidentSeverity;
   location_name: string;
+  reporter_name: string;
+  reporter_phone: string;
   latitude?: number | null;
   longitude?: number | null;
   people_affected?: number | null;

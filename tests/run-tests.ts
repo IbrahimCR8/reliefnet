@@ -33,6 +33,10 @@ test('Incident Validation: Valid report passes validation', () => {
     description: 'River water has entered over 40 homes with water level reaching 3 feet. Evacuation needed.',
     severity: 'high',
     location_name: 'Ward 4, North Riverbank, Townville',
+    reporter_name: 'Karthik Subramanian',
+    reporter_phone: '9840123456',
+    cloudinary_public_id: 'ev-test-123',
+    cloudinary_url: 'https://res.cloudinary.com/reliefnet/image/upload/sample.jpg',
     latitude: 17.385,
     longitude: 78.4867,
     people_affected: 160,
@@ -41,6 +45,81 @@ test('Incident Validation: Valid report passes validation', () => {
 
   const parsed = reportIncidentSchema.safeParse(validReport);
   assert.equal(parsed.success, true);
+});
+
+test('Incident Validation: Missing photographic evidence is rejected', () => {
+  const reportWithoutPhoto = {
+    title: 'Severe Flooding in Residential Ward 4',
+    category: 'flood',
+    description: 'River water has entered over 40 homes with water level reaching 3 feet. Evacuation needed.',
+    severity: 'high',
+    location_name: 'Ward 4, North Riverbank, Townville',
+    reporter_name: 'Karthik Subramanian',
+    reporter_phone: '9840123456',
+    // Missing cloudinary_url
+  };
+
+  const parsed = reportIncidentSchema.safeParse(reportWithoutPhoto);
+  assert.equal(parsed.success, false);
+});
+
+test('Incident Validation: Missing or short reporter name is rejected', () => {
+  const reportWithoutName = {
+    title: 'Severe Flooding in Residential Ward 4',
+    category: 'flood',
+    description: 'River water has entered over 40 homes with water level reaching 3 feet. Evacuation needed.',
+    severity: 'high',
+    location_name: 'Ward 4, North Riverbank, Townville',
+    reporter_name: 'A', // too short (< 2 chars)
+    reporter_phone: '9840123456',
+    cloudinary_public_id: 'ev-test-123',
+    cloudinary_url: 'https://res.cloudinary.com/reliefnet/image/upload/sample.jpg',
+  };
+
+  const parsed = reportIncidentSchema.safeParse(reportWithoutName);
+  assert.equal(parsed.success, false);
+});
+
+test('Incident Validation: Missing or invalid reporter phone number is rejected', () => {
+  const reportWithInvalidPhone = {
+    title: 'Severe Flooding in Residential Ward 4',
+    category: 'flood',
+    description: 'River water has entered over 40 homes with water level reaching 3 feet. Evacuation needed.',
+    severity: 'high',
+    location_name: 'Ward 4, North Riverbank, Townville',
+    reporter_name: 'Karthik Subramanian',
+    reporter_phone: '12345', // invalid phone format
+    cloudinary_public_id: 'ev-test-123',
+    cloudinary_url: 'https://res.cloudinary.com/reliefnet/image/upload/sample.jpg',
+  };
+
+  const parsed = reportIncidentSchema.safeParse(reportWithInvalidPhone);
+  assert.equal(parsed.success, false);
+});
+
+test('Incident Validation: Valid Indian phone formats pass (+91 and 10 digits)', () => {
+  const baseReport = {
+    title: 'Severe Flooding in Residential Ward 4',
+    category: 'flood',
+    description: 'River water has entered over 40 homes with water level reaching 3 feet. Evacuation needed.',
+    severity: 'high',
+    location_name: 'Ward 4, North Riverbank, Townville',
+    reporter_name: 'Karthik Subramanian',
+    cloudinary_public_id: 'ev-test-123',
+    cloudinary_url: 'https://res.cloudinary.com/reliefnet/image/upload/sample.jpg',
+  };
+
+  const parsed10Digits = reportIncidentSchema.safeParse({
+    ...baseReport,
+    reporter_phone: '9876543210',
+  });
+  assert.equal(parsed10Digits.success, true);
+
+  const parsedWithPrefix = reportIncidentSchema.safeParse({
+    ...baseReport,
+    reporter_phone: '+91 9876543210',
+  });
+  assert.equal(parsedWithPrefix.success, true);
 });
 
 test('Incident Validation: Short title is rejected (< 5 chars)', () => {
@@ -401,6 +480,10 @@ test('Incident Validation: Incident report without manual lat/lon passes validat
     description: 'Road submerged under 2 feet of water. Vehicles stranded near bus terminus.',
     severity: 'high',
     location_name: 'Velachery Main Road, Chennai',
+    reporter_name: 'Priya Sundaram',
+    reporter_phone: '9840998877',
+    cloudinary_public_id: 'ev-auto-456',
+    cloudinary_url: 'https://res.cloudinary.com/reliefnet/image/upload/sample2.jpg',
     // No latitude or longitude provided by user
   };
 
@@ -409,6 +492,8 @@ test('Incident Validation: Incident report without manual lat/lon passes validat
   assert.equal(parsed.data?.latitude, undefined);
   assert.equal(parsed.data?.longitude, undefined);
   assert.equal(parsed.data?.location_name, 'Velachery Main Road, Chennai');
+  assert.equal(parsed.data?.reporter_name, 'Priya Sundaram');
+  assert.equal(parsed.data?.reporter_phone, '9840998877');
 });
 
 console.log('✅ All ReliefNet Automated Test Suites Passed Successfully!');
